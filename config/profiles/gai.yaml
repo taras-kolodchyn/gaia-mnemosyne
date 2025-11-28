@@ -1,0 +1,6 @@
+mode: "gai"
+providers:
+  github: true
+  filesystem: true
+llm:
+  engine: "tensorzero"

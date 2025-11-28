@@ -1,0 +1,7 @@
+mode: "airgap"
+outbound_network: false
+providers:
+  github: false
+  filesystem: true
+llm:
+  engine: "tensorzero"

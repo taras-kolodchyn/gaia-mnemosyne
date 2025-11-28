@@ -1,0 +1,6 @@
+mode: "standalone"
+providers:
+  filesystem: true
+  github: false
+llm:
+  engine: "tensorzero"
