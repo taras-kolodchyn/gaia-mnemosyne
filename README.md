@@ -18,3 +18,4 @@ Built in Rust + React.
 ```bash
 make bootstrap
 make up
+```
