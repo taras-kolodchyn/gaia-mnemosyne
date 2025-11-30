@@ -225,6 +225,7 @@ fn is_text(bytes: &[u8]) -> bool {
     !bytes.iter().any(|b| *b == 0)
 }
 
+#[allow(dead_code)]
 fn extract_docx_text_from_bytes(bytes: &[u8]) -> Option<String> {
     use std::io::Cursor;
     let cursor = Cursor::new(bytes);
@@ -238,6 +239,7 @@ fn extract_docx_text_from_bytes(bytes: &[u8]) -> Option<String> {
     None
 }
 
+#[allow(dead_code)]
 fn extract_docx_text(xml: &str) -> String {
     let mut out = String::new();
     let mut inside_t = false;

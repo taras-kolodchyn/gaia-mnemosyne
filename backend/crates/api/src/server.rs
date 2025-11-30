@@ -36,6 +36,7 @@ pub fn build_router() -> Router {
         .route("/v1/context/query", post(handlers::context_query::context_query))
         .route("/v1/rag/test", get(handlers::rag_test::rag_test))
         .route("/v1/graph/snapshot", get(handlers::graph_snapshot::graph_snapshot))
+        .route("/v1/graph/debug", get(handlers::graph_debug::graph_debug))
         .route("/v1/graph/node/:id", get(handlers::graph_node::graph_node))
         .route("/v1/graph/expand/:id", get(handlers::graph_expand::graph_expand))
         .route(

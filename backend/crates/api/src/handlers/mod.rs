@@ -4,6 +4,7 @@ pub mod error;
 pub mod graph_expand;
 pub mod graph_node;
 pub mod graph_snapshot;
+pub mod graph_debug;
 pub mod health;
 pub mod ingestion_metrics;
 pub mod jobs_create;

@@ -1,5 +1,6 @@
 use axum::{Json, extract::Path};
 use serde::Serialize;
+use serde_json::Value;
 
 #[derive(Serialize)]
 pub struct Neighbor {
@@ -39,12 +40,29 @@ async fn fetch_sql(
         .await
     {
         if let Ok(val) = resp.json::<serde_json::Value>().await {
+            // SurrealDB 2.x wraps result in [{result:[...]}]
             if let Some(arr) = val.as_array() {
-                return arr.clone();
+                if let Some(obj) = arr.get(0).and_then(|v| v.as_object()) {
+                    if let Some(rows) = obj.get("result").and_then(|r| r.as_array()) {
+                        return rows.clone();
+                    }
+                }
             }
         }
     }
     Vec::new()
+}
+
+fn extract_id(v: &Value) -> Option<String> {
+    if let Some(s) = v.as_str() {
+        return Some(s.to_string());
+    }
+    if let Some(obj) = v.as_object() {
+        if let (Some(tb), Some(id)) = (obj.get("tb").and_then(|x| x.as_str()), obj.get("id").and_then(|x| x.as_str())) {
+            return Some(format!("{}:{}", tb, id));
+        }
+    }
+    None
 }
 
 pub async fn graph_node(Path(id): Path<String>) -> Json<GraphNodeDetail> {
@@ -97,8 +115,8 @@ pub async fn graph_node(Path(id): Path<String>) -> Json<GraphNodeDetail> {
 
     let mut neighbors = Vec::new();
     for row in neighbor_rows {
-        let in_id = row.get("in").and_then(|v| v.as_str());
-        let out_id = row.get("out").and_then(|v| v.as_str());
+        let in_id = row.get("in").and_then(extract_id);
+        let out_id = row.get("out").and_then(extract_id);
         if let (Some(in_id), Some(out_id)) = (in_id, out_id) {
             let other = if in_id == id { out_id } else { in_id };
             let neighbor_rows = fetch_sql(

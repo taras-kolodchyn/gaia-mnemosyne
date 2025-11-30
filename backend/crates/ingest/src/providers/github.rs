@@ -27,7 +27,7 @@ impl GitHubProvider {
         Box::pin(async move {
             let url = format!("https://api.github.com/repos/{}/{}/contents/{}", owner, repo, path);
             let mut attempt = 0;
-            let mut res = loop {
+            let res = loop {
                 let resp = client.get(&url).send().await;
                 let Ok(resp) = resp else { return Vec::new() };
                 if resp.status() == reqwest::StatusCode::FORBIDDEN {

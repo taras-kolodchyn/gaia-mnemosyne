@@ -1,6 +1,15 @@
-# Test fixtures
+# Test Fixtures
 
-Purpose: shared sample files used across tests.
-Contents:
-- Text snippets, config samples, and other reusable assets.
-- Access via test utilities (e.g., `load_fixture("sample.txt")`).
+Shared assets reused across unit/integration/E2E tests.
+
+## Purpose
+- Provide deterministic sample inputs (documents, configs, JSON).
+- Avoid duplicating inline strings inside tests.
+
+## Usage
+- Access via `mnemo_test_utils::fixtures::load_fixture("sample.txt")`.
+- Keep fixtures small and clearly named.
+
+## Contents
+- `sample.txt` — basic text example.
+- Add more domain fixtures as scenarios expand.

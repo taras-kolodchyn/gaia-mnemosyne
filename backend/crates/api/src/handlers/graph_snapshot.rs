@@ -1,5 +1,6 @@
 use axum::{Json, extract::Query};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::collections::HashSet;
 
 #[derive(Serialize, Clone)]
@@ -47,6 +48,7 @@ async fn fetch_sql(
     user: &str,
     pass: &str,
 ) -> Vec<serde_json::Value> {
+    tracing::debug!("Surreal SQL query: {}", sql);
     let res = client
         .post(format!("{}/sql", base_url))
         .header("NS", ns)
@@ -57,14 +59,48 @@ async fn fetch_sql(
         .body(sql.to_string())
         .send()
         .await;
-    if let Ok(resp) = res {
-        if let Ok(json) = resp.json::<serde_json::Value>().await {
-            if let Some(arr) = json.as_array() {
-                return arr.clone();
+    match res {
+        Ok(resp) => {
+            let status = resp.status();
+            let text = resp.text().await.unwrap_or_default();
+            tracing::debug!(
+                "Surreal response status={} body_len={} body_snip={}",
+                status,
+                text.len(),
+                text.chars().take(2000).collect::<String>()
+            );
+            match serde_json::from_str::<serde_json::Value>(&text) {
+                Ok(json) => {
+                    if let Some(arr) = json.as_array() {
+                        if let Some(obj) = arr.get(0).and_then(|v| v.as_object()) {
+                            if let Some(rows) = obj.get("result").and_then(|r| r.as_array()) {
+                                tracing::debug!("Surreal parsed rows={}", rows.len());
+                                return rows.clone();
+                            }
+                        }
+                    }
+                    tracing::warn!("Surreal response missing result array");
+                }
+                Err(err) => {
+                    tracing::error!("Surreal JSON parse failed: {err} body={}", text);
+                }
             }
         }
+        Err(err) => tracing::error!("Surreal request failed: {err}"),
     }
     Vec::new()
+}
+
+fn extract_id(v: &Value) -> Option<String> {
+    if let Some(s) = v.as_str() {
+        return Some(s.to_string());
+    }
+    if let Some(obj) = v.as_object() {
+        if let (Some(tb), Some(id)) = (obj.get("tb").and_then(|x| x.as_str()), obj.get("id").and_then(|x| x.as_str())) {
+            return Some(format!("{}:{}", tb, id));
+        }
+    }
+    None
 }
 
 pub async fn graph_snapshot(Query(params): Query<SnapshotParams>) -> Json<GraphSnapshot> {
@@ -99,9 +135,13 @@ pub async fn graph_snapshot(Query(params): Query<SnapshotParams>) -> Json<GraphS
         &pass,
     )
     .await;
-    tracing::info!("Graph snapshot: fetched {} file rows", file_rows.len());
+    tracing::info!(
+        "Graph snapshot: fetched {} file rows (sample={:?})",
+        file_rows.len(),
+        file_rows.iter().take(3).collect::<Vec<_>>()
+    );
     for v in file_rows {
-        if let Some(id) = v.get("id").and_then(|x| x.as_str()) {
+        if let Some(id) = v.get("id").and_then(extract_id) {
             nodes.push(GraphNode {
                 id: id.to_string(),
                 data: GraphNodeData { label: label_from(&v) },
@@ -122,7 +162,7 @@ pub async fn graph_snapshot(Query(params): Query<SnapshotParams>) -> Json<GraphS
     .await;
     tracing::info!("Graph snapshot: fetched {} chunk rows", chunk_rows.len());
     for v in chunk_rows {
-        if let Some(id) = v.get("id").and_then(|x| x.as_str()) {
+        if let Some(id) = v.get("id").and_then(extract_id) {
             let label = v
                 .get("path")
                 .and_then(|p| p.as_str())
@@ -141,10 +181,14 @@ pub async fn graph_snapshot(Query(params): Query<SnapshotParams>) -> Json<GraphS
     let edge_rows =
         fetch_sql(&client, &surreal_url, "SELECT in, out FROM contains;", &ns, &db, &user, &pass)
             .await;
-    tracing::info!("Graph snapshot: fetched {} edge rows", edge_rows.len());
+    tracing::info!(
+        "Graph snapshot: fetched {} edge rows (sample={:?})",
+        edge_rows.len(),
+        edge_rows.iter().take(3).collect::<Vec<_>>()
+    );
     for v in edge_rows {
         if let (Some(src), Some(dst)) =
-            (v.get("in").and_then(|x| x.as_str()), v.get("out").and_then(|x| x.as_str()))
+            (v.get("in").and_then(extract_id), v.get("out").and_then(extract_id))
         {
             let source = src.to_string();
             let target = dst.to_string();
@@ -178,4 +222,58 @@ pub async fn graph_snapshot(Query(params): Query<SnapshotParams>) -> Json<GraphS
         nodes: paged_nodes,
         edges: filtered_edges,
     })
+}
+
+pub async fn graph_debug() -> Json<serde_json::Value> {
+    let surreal_url =
+        std::env::var("SURREALDB_URL").unwrap_or_else(|_| "http://localhost:8000".into());
+    let client = reqwest::Client::new();
+    let ns = std::env::var("SURREALDB_NS").unwrap_or_else(|_| "mnemo".into());
+    let db = std::env::var("SURREALDB_DB").unwrap_or_else(|_| "mnemo".into());
+    let user = std::env::var("SURREALDB_USER").unwrap_or_else(|_| "root".into());
+    let pass = std::env::var("SURREALDB_PASS").unwrap_or_else(|_| "root".into());
+
+    let files = fetch_sql(
+        &client,
+        &surreal_url,
+        "SELECT id, path, namespace FROM file;",
+        &ns,
+        &db,
+        &user,
+        &pass,
+    )
+    .await;
+    let chunks = fetch_sql(
+        &client,
+        &surreal_url,
+        "SELECT id, path, namespace, chunk_index FROM chunk;",
+        &ns,
+        &db,
+        &user,
+        &pass,
+    )
+    .await;
+    let edges = fetch_sql(
+        &client,
+        &surreal_url,
+        "SELECT in, out FROM contains;",
+        &ns,
+        &db,
+        &user,
+        &pass,
+    )
+    .await;
+
+    tracing::info!(
+        "Graph debug: files={}, chunks={}, edges={}",
+        files.len(),
+        chunks.len(),
+        edges.len()
+    );
+
+    Json(serde_json::json!({
+        "files": files,
+        "chunks": chunks,
+        "edges": edges
+    }))
 }
