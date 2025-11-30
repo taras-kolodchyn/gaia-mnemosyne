@@ -28,6 +28,7 @@ async fn fetch_sql(
     user: &str,
     pass: &str,
 ) -> Vec<serde_json::Value> {
+    tracing::debug!("Surreal SQL query (node): {}", sql);
     if let Ok(resp) = client
         .post(format!("{}/sql", base_url))
         .header("NS", ns)
@@ -39,14 +40,29 @@ async fn fetch_sql(
         .send()
         .await
     {
-        if let Ok(val) = resp.json::<serde_json::Value>().await {
-            // SurrealDB 2.x wraps result in [{result:[...]}]
-            if let Some(arr) = val.as_array() {
-                if let Some(obj) = arr.get(0).and_then(|v| v.as_object()) {
-                    if let Some(rows) = obj.get("result").and_then(|r| r.as_array()) {
-                        return rows.clone();
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        tracing::debug!(
+            "Surreal node response status={} body_len={} body_snip={}",
+            status,
+            text.len(),
+            text.chars().take(2000).collect::<String>()
+        );
+        match serde_json::from_str::<serde_json::Value>(&text) {
+            Ok(val) => {
+                // SurrealDB 2.x wraps result in [{result:[...]}]
+                if let Some(arr) = val.as_array() {
+                    if let Some(obj) = arr.get(0).and_then(|v| v.as_object()) {
+                        if let Some(rows) = obj.get("result").and_then(|r| r.as_array()) {
+                            tracing::debug!("Surreal node parsed rows={}", rows.len());
+                            return rows.clone();
+                        }
                     }
                 }
+                tracing::warn!("Surreal node response missing result array");
+            }
+            Err(err) => {
+                tracing::error!("Surreal node JSON parse failed: {err} body={}", text);
             }
         }
     }
@@ -86,6 +102,7 @@ pub async fn graph_node(Path(id): Path<String>) -> Json<GraphNodeDetail> {
         &pass,
     )
     .await;
+    tracing::info!("Graph node lookup rows={}", node_rows.len());
 
     let mut node_type = "unknown".to_string();
     let mut label = id.clone();
@@ -112,6 +129,7 @@ pub async fn graph_node(Path(id): Path<String>) -> Json<GraphNodeDetail> {
         &pass,
     )
     .await;
+    tracing::info!("Graph node neighbors raw rows={}", neighbor_rows.len());
 
     let mut neighbors = Vec::new();
     for row in neighbor_rows {
