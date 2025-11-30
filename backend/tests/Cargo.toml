@@ -1,0 +1,46 @@
+[package]
+name = "mnemo-tests"
+version = "0.1.0"
+edition = "2024"
+
+[dev-dependencies]
+mnemo-api = { path = "../crates/api" }
+tokio = { version = "1.40", features = ["rt-multi-thread", "macros"] }
+mnemo_test_utils = { path = "../crates/test-utils" }
+mnemo-inference = { path = "../crates/inference" }
+
+[[test]]
+name = "core_tests"
+path = "unit/core_tests.rs"
+
+[[test]]
+name = "storage_tests"
+path = "unit/storage_tests.rs"
+
+[[test]]
+name = "api_integration_test"
+path = "integration/api_integration_test.rs"
+
+[[test]]
+name = "fixture_and_fake_engines"
+path = "integration/fixture_and_fake_engines.rs"
+
+[[test]]
+name = "basic_flow_test"
+path = "e2e/basic_flow_test.rs"
+
+[[test]]
+name = "rag_e2e_placeholder"
+path = "e2e/rag_e2e_placeholder.rs"
+
+[[test]]
+name = "vector_store_tests"
+path = "unit/vector_store_tests.rs"
+
+[[test]]
+name = "inference_tests"
+path = "unit/inference_tests.rs"
+
+[[test]]
+name = "pipeline_builder_tests"
+path = "unit/pipeline_builder_tests.rs"

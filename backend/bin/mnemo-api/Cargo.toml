@@ -1,0 +1,11 @@
+[package]
+name = "mnemo-api-service"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+mnemo-api = { path = "../../crates/api" }
+axum = "0.7"
+tokio = { version = "1", features = ["full"] }
+mnemo-core = { path = "../../crates/core" }
+tower-http = { version = "0.5", features = ["cors"] }

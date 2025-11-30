@@ -1,0 +1,38 @@
+.mnemo-h1 {
+  font-size: 32px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--mnemo-text);
+}
+
+.mnemo-h2 {
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  color: var(--mnemo-text);
+}
+
+.mnemo-h3 {
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--mnemo-text);
+}
+
+.mnemo-body {
+  font-size: 16px;
+  color: var(--mnemo-text);
+  opacity: 0.9;
+}
+
+.mnemo-muted {
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.mnemo-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+  background: #0b1320;
+  color: #86efac;
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
+}

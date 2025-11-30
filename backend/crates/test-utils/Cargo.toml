@@ -1,0 +1,13 @@
+[package]
+name = "mnemo_test_utils"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+async-trait = "0.1"
+mnemo-core = { path = "../core" }
+mnemo-inference = { path = "../inference" }
+mnemo-ingest = { path = "../ingest" }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

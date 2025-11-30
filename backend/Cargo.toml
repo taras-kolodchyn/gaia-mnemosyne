@@ -1,4 +1,6 @@
+# Workspace configuration for Gaia Mnemosyne.
 [workspace]
+resolver = "3"
 members = [
     "crates/api",
     "crates/core",
@@ -6,5 +8,15 @@ members = [
     "crates/scheduler",
     "crates/storage",
     "crates/inference",
-    "crates/cli"
+    "crates/cli",
+    "crates/test-utils",
+    "tests",
+    "benches",
+    "bin/mnemo-api"
 ]
+
+[workspace.package]
+version = "0.1.0"
+
+[workspace.dependencies]
+criterion = "0.5"

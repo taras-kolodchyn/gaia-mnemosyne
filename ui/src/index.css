@@ -1,0 +1,43 @@
+@import './styles/typography.css';
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --mnemo-bg-0: #0a0f1a;
+    --mnemo-bg-1: #0d1b2a;
+    --mnemo-bg-2: #112031;
+    --mnemo-bg: #0d1b2a;
+    --mnemo-bg-light: #1b263b;
+    --mnemo-text: #ede8d0;
+    --mnemo-accent: #d4a657;
+    --mnemo-card: #112031;
+    --radius: 0.5rem
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+    transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+  }
+  body {
+    background-color: var(--mnemo-bg-0);
+    color: var(--mnemo-text);
+    opacity: 0.9;
+    @apply text-foreground;
+  }
+}
+
+.mnemo-shadow-1 {
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+}
+
+.mnemo-shadow-2 {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+
+.mnemo-glow-gold {
+  box-shadow: 0 0 12px rgba(212, 166, 87, 0.25);
+}

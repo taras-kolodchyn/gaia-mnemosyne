@@ -1,6 +1,10 @@
+# Placeholder manifest for mnemo-inference crate.
 [package]
 name = "mnemo-inference"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+async-trait = "0.1"
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.8"

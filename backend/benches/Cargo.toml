@@ -1,0 +1,16 @@
+[package]
+name = "mnemo-benches"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[dev-dependencies]
+criterion = { workspace = true }
+
+[[bench]]
+name = "basic_bench"
+path = "basic_bench.rs"
+harness = true
