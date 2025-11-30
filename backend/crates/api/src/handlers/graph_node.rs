@@ -59,7 +59,7 @@ pub async fn graph_node(Path(id): Path<String>) -> Json<GraphNodeDetail> {
     let node_rows = fetch_sql(
         &client,
         &format!(
-            "SELECT id, path, namespace, 'file' as kind FROM file WHERE id = '{id}' UNION ALL SELECT id, path, namespace, 'chunk' as kind FROM chunk WHERE id = '{id}';"
+            "SELECT id, path, namespace, 'file' as kind FROM file WHERE id = '{id}' UNION ALL SELECT id, path, namespace, chunk_index, 'chunk' as kind FROM chunk WHERE id = '{id}';"
         ),
         &surreal_url,
         &ns,
@@ -76,7 +76,11 @@ pub async fn graph_node(Path(id): Path<String>) -> Json<GraphNodeDetail> {
             node_type = k.to_string();
         }
         if let Some(p) = row.get("path").and_then(|v| v.as_str()) {
-            label = p.to_string();
+            if let Some(idx) = row.get("chunk_index").and_then(|c| c.as_i64()) {
+                label = format!("{}#{}", p, idx);
+            } else {
+                label = p.to_string();
+            }
         }
     }
 
@@ -97,11 +101,33 @@ pub async fn graph_node(Path(id): Path<String>) -> Json<GraphNodeDetail> {
         let out_id = row.get("out").and_then(|v| v.as_str());
         if let (Some(in_id), Some(out_id)) = (in_id, out_id) {
             let other = if in_id == id { out_id } else { in_id };
-            neighbors.push(Neighbor {
-                id: other.to_string(),
-                label: other.to_string(),
-                node_type: "unknown".into(),
-            });
+            let neighbor_rows = fetch_sql(
+                &client,
+                &format!(
+                    "SELECT id, path, namespace, 'file' as kind FROM file WHERE id = '{other}' UNION ALL SELECT id, path, namespace, chunk_index, 'chunk' as kind FROM chunk WHERE id = '{other}';"
+                ),
+                &surreal_url,
+                &ns,
+                &db,
+                &user,
+                &pass,
+            )
+            .await;
+            let (mut n_label, mut n_type) = (other.to_string(), "unknown".to_string());
+            if let Some(nr) = neighbor_rows.get(0) {
+                if let Some(k) = nr.get("kind").and_then(|v| v.as_str()) {
+                    n_type = k.to_string();
+                }
+                if let Some(p) = nr.get("path").and_then(|v| v.as_str()) {
+                    if let Some(idx) = nr.get("chunk_index").and_then(|c| c.as_i64()) {
+                        n_label = format!("{}#{}", p, idx);
+                    } else {
+                        n_label = p.to_string();
+                    }
+                }
+            }
+
+            neighbors.push(Neighbor { id: other.to_string(), label: n_label, node_type: n_type });
         }
     }
 

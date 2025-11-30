@@ -99,6 +99,7 @@ pub async fn graph_snapshot(Query(params): Query<SnapshotParams>) -> Json<GraphS
         &pass,
     )
     .await;
+    tracing::info!("Graph snapshot: fetched {} file rows", file_rows.len());
     for v in file_rows {
         if let Some(id) = v.get("id").and_then(|x| x.as_str()) {
             nodes.push(GraphNode {
@@ -119,11 +120,19 @@ pub async fn graph_snapshot(Query(params): Query<SnapshotParams>) -> Json<GraphS
         &pass,
     )
     .await;
+    tracing::info!("Graph snapshot: fetched {} chunk rows", chunk_rows.len());
     for v in chunk_rows {
         if let Some(id) = v.get("id").and_then(|x| x.as_str()) {
+            let label = v
+                .get("path")
+                .and_then(|p| p.as_str())
+                .map(|p| {
+                    format!("{}#{}", p, v.get("chunk_index").and_then(|i| i.as_i64()).unwrap_or(0))
+                })
+                .unwrap_or_else(|| label_from(&v));
             nodes.push(GraphNode {
                 id: id.to_string(),
-                data: GraphNodeData { label: label_from(&v) },
+                data: GraphNodeData { label },
                 node_type: "chunk".into(),
             });
         }
@@ -132,6 +141,7 @@ pub async fn graph_snapshot(Query(params): Query<SnapshotParams>) -> Json<GraphS
     let edge_rows =
         fetch_sql(&client, &surreal_url, "SELECT in, out FROM contains;", &ns, &db, &user, &pass)
             .await;
+    tracing::info!("Graph snapshot: fetched {} edge rows", edge_rows.len());
     for v in edge_rows {
         if let (Some(src), Some(dst)) =
             (v.get("in").and_then(|x| x.as_str()), v.get("out").and_then(|x| x.as_str()))
@@ -152,6 +162,13 @@ pub async fn graph_snapshot(Query(params): Query<SnapshotParams>) -> Json<GraphS
         .into_iter()
         .filter(|e| node_ids.contains(&e.source) && node_ids.contains(&e.target))
         .collect();
+
+    tracing::info!(
+        "Graph snapshot response: nodes={}, edges={}, returned={}",
+        nodes.len(),
+        filtered_edges.len(),
+        paged_nodes.len()
+    );
 
     Json(GraphSnapshot {
         total_nodes: nodes.len() as i64,

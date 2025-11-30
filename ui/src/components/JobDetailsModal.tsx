@@ -192,7 +192,7 @@ export function JobDetailsModal({
   if (!job) return null
   return (
     <MnemoModal open={open} onClose={onClose} title="Job Details">
-      <div className="rounded-2xl bg-[var(--mnemo-bg-2)] border border-[rgba(212,166,87,0.15)] p-6 text-sm space-y-4 mnemo-shadow-2 w-full max-w-5xl">
+      <div className="rounded-2xl bg-[var(--mnemo-bg-2)] border border-[rgba(212,166,87,0.15)] p-6 text-sm space-y-4 mnemo-shadow-2 w-full max-w-6xl">
         <div className="flex items-start justify-between pb-3 border-b border-white/5">
           <div className="space-y-1">
             <div className="text-xl font-semibold text-[var(--mnemo-text)]">Job Details</div>
