@@ -1,7 +1,15 @@
 import { mnemoGet } from './client'
 
+type RawNode = {
+  id: string
+  data?: { label?: string }
+  label?: string
+  type?: string
+  node_type?: string
+}
+
 type RawSnapshot = {
-  nodes: { id: string; label: string; type?: string }[]
+  nodes: RawNode[]
   edges: { source: string; target: string; id?: string }[]
 }
 
@@ -18,11 +26,15 @@ export async function fetchGraphSnapshot() {
   const res = await mnemoGet('/v1/graph/snapshot')
   const snapshot = res as RawSnapshot
 
-  const nodes = snapshot.nodes.map((n, idx) => ({
-    id: n.id,
-    position: { x: idx * 200, y: 0 },
-    data: { label: n.label },
-  }))
+  const nodes = snapshot.nodes.map((n, idx) => {
+    const label = n.data?.label ?? n.label ?? ''
+    return {
+      id: n.id,
+      position: { x: idx * 200, y: 0 },
+      data: { label },
+      type: n.type ?? n.node_type,
+    }
+  })
 
   const edges = snapshot.edges.map((e, idx) => ({
     id: e.id ?? `edge-${idx}`,
