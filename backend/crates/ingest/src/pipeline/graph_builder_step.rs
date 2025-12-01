@@ -110,6 +110,38 @@ impl PipelineStep for GraphBuilderStep {
                 }
             }
 
+            // Debug counts to confirm graph records are actually persisted.
+            let file_count = client
+                .query("SELECT count() AS c FROM file;")
+                .await
+                .unwrap_or_default()
+                .get(0)
+                .and_then(|v| v.get("c"))
+                .and_then(|c| c.as_i64())
+                .unwrap_or(0);
+            let chunk_count = client
+                .query("SELECT count() AS c FROM chunk;")
+                .await
+                .unwrap_or_default()
+                .get(0)
+                .and_then(|v| v.get("c"))
+                .and_then(|c| c.as_i64())
+                .unwrap_or(0);
+            let edge_count = client
+                .query("SELECT count() AS c FROM contains;")
+                .await
+                .unwrap_or_default()
+                .get(0)
+                .and_then(|v| v.get("c"))
+                .and_then(|c| c.as_i64())
+                .unwrap_or(0);
+            tracing::info!(
+                "Surreal graph counts after upsert: files={}, chunks={}, edges={}",
+                file_count,
+                chunk_count,
+                edge_count
+            );
+
             let _ = WS_HUB.broadcast(
                 json!({"event":"ingest_step","job_id": job_id,"step":"graph_upsert","status":"done"}).to_string(),
             );
