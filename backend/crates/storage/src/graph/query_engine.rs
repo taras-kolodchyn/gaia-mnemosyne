@@ -1,6 +1,6 @@
 use super::graph_engine::GraphEngine;
 use mnemo_core::error::MnemoResult;
-use reqwest::Client;
+use crate::surreal_rpc_client::SurrealRpcClient;
 use serde::Serialize;
 use std::collections::{HashSet, VecDeque};
 
@@ -33,48 +33,66 @@ impl GraphQueryEngine {
     /// Expand graph using SurrealDB edges with simple BFS, returning nodes and edges.
     pub async fn expand_with_edges(
         &self,
-        surreal_url: &str,
+        _surreal_url: &str,
         start: &str,
         depth: usize,
     ) -> MnemoResult<GraphExpansion> {
-        let client = Client::new();
+        let rpc = match SurrealRpcClient::get().await {
+            Ok(c) => c,
+            Err(err) => {
+                tracing::error!("Surreal RPC init failed: {err}");
+                return Ok(GraphExpansion { nodes: vec![start.to_string()], edges: Vec::new() });
+            }
+        };
+
         let mut visited: HashSet<String> = HashSet::new();
         let mut edges: Vec<GraphEdge> = Vec::new();
         let mut frontier: VecDeque<(String, usize)> = VecDeque::new();
         frontier.push_back((start.to_string(), 0));
         visited.insert(start.to_string());
 
+        let extract_id = |v: &serde_json::Value| -> Option<String> {
+            if let Some(s) = v.as_str() {
+                return Some(s.to_string());
+            }
+            if let Some(obj) = v.as_object() {
+                if let (Some(tb), Some(id)) =
+                    (obj.get("tb").and_then(|x| x.as_str()), obj.get("id").and_then(|x| x.as_str()))
+                {
+                    return Some(format!("{}:{}", tb, id));
+                }
+            }
+            None
+        };
+
         while let Some((node, d)) = frontier.pop_front() {
             if d >= depth {
                 continue;
             }
             let sql = format!(
-                "SELECT in, out FROM edge WHERE in = '{}' OR out = '{}' LIMIT 100;",
+                "SELECT in, out FROM contains WHERE in = '{}' OR out = '{}' LIMIT 100;",
                 node, node
             );
-            let resp = client
-                .post(format!("{}/sql", surreal_url))
-                .body(sql)
-                .send()
-                .await
-                .map_err(|e| mnemo_core::error::MnemoError::Message(e.to_string()))?;
-            if let Ok(val) = resp.json::<serde_json::Value>().await {
-                if let Some(arr) = val.get("result").and_then(|v| v.as_array()) {
-                    for item in arr {
-                        let src =
-                            item.get("out").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                        let dst = item.get("in").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                        if src.is_empty() || dst.is_empty() {
-                            continue;
-                        }
-                        edges.push(GraphEdge { source: src.clone(), target: dst.clone() });
-                        if visited.insert(src.clone()) {
-                            frontier.push_back((src, d + 1));
-                        }
-                        if visited.insert(dst.clone()) {
-                            frontier.push_back((dst, d + 1));
-                        }
-                    }
+            let rows = match rpc.query(&sql).await {
+                Ok(r) => r,
+                Err(err) => {
+                    tracing::error!("Surreal expand_with_edges query failed: {err}");
+                    continue;
+                }
+            };
+            for item in rows {
+                let src = item.get("out").and_then(&extract_id);
+                let dst = item.get("in").and_then(&extract_id);
+                let (src, dst) = match (src, dst) {
+                    (Some(s), Some(d)) => (s, d),
+                    _ => continue,
+                };
+                edges.push(GraphEdge { source: src.clone(), target: dst.clone() });
+                if visited.insert(src.clone()) {
+                    frontier.push_back((src, d + 1));
+                }
+                if visited.insert(dst.clone()) {
+                    frontier.push_back((dst, d + 1));
                 }
             }
         }

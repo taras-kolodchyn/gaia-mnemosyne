@@ -18,5 +18,5 @@ tokio-postgres = "0.7"
 deadpool-postgres = "0.10"
 bb8 = "0.8"
 tracing = "0.1"
-# SurrealDB client (v2 placeholder; currently using HTTP via reqwest but keep dependency for future)
-surrealdb = { version = "2", default-features = false, features = ["kv-mem"] }
+# SurrealDB client (RPC over WebSocket)
+surrealdb = { version = "2", default-features = false, features = ["protocol-ws"] }

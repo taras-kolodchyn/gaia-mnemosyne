@@ -1,4 +1,5 @@
-use axum::{Json, extract::Query};
+use axum::{extract::Query, Json};
+use mnemo_storage::surreal_rpc_client::SurrealRpcClient;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashSet;
@@ -39,56 +40,18 @@ pub struct SnapshotParams {
     pub offset: Option<usize>,
 }
 
-async fn fetch_sql(
-    client: &reqwest::Client,
-    base_url: &str,
-    sql: &str,
-    ns: &str,
-    db: &str,
-    user: &str,
-    pass: &str,
-) -> Vec<serde_json::Value> {
-    tracing::debug!("Surreal SQL query: {}", sql);
-    let res = client
-        .post(format!("{}/sql", base_url))
-        .header("NS", ns)
-        .header("DB", db)
-        .header("Content-Type", "text/plain")
-        .header("Accept", "application/json")
-        .basic_auth(user, Some(pass))
-        .body(sql.to_string())
-        .send()
-        .await;
-    match res {
-        Ok(resp) => {
-            let status = resp.status();
-            let text = resp.text().await.unwrap_or_default();
-            tracing::debug!(
-                "Surreal response status={} body_len={} body_snip={}",
-                status,
-                text.len(),
-                text.chars().take(2000).collect::<String>()
-            );
-            match serde_json::from_str::<serde_json::Value>(&text) {
-                Ok(json) => {
-                    if let Some(arr) = json.as_array() {
-                        if let Some(obj) = arr.get(0).and_then(|v| v.as_object()) {
-                            if let Some(rows) = obj.get("result").and_then(|r| r.as_array()) {
-                                tracing::debug!("Surreal parsed rows={}", rows.len());
-                                return rows.clone();
-                            }
-                        }
-                    }
-                    tracing::warn!("Surreal response missing result array");
-                }
-                Err(err) => {
-                    tracing::error!("Surreal JSON parse failed: {err} body={}", text);
-                }
-            }
+async fn fetch_rows(client: &SurrealRpcClient, sql: &str) -> Vec<serde_json::Value> {
+    tracing::debug!("Surreal RPC query: {}", sql);
+    match client.query(sql).await {
+        Ok(rows) => {
+            tracing::debug!("Surreal RPC rows={}", rows.len());
+            rows
         }
-        Err(err) => tracing::error!("Surreal request failed: {err}"),
+        Err(err) => {
+            tracing::error!("Surreal RPC query failed: {err}");
+            Vec::new()
+        }
     }
-    Vec::new()
 }
 
 fn extract_id(v: &Value) -> Option<String> {
@@ -107,13 +70,20 @@ pub async fn graph_snapshot(Query(params): Query<SnapshotParams>) -> Json<GraphS
     let limit = params.limit.unwrap_or(500);
     let offset = params.offset.unwrap_or(0);
 
-    let surreal_url =
-        std::env::var("SURREALDB_URL").unwrap_or_else(|_| "http://localhost:8000".into());
-    let client = reqwest::Client::new();
-    let ns = std::env::var("SURREALDB_NS").unwrap_or_else(|_| "mnemo".into());
-    let db = std::env::var("SURREALDB_DB").unwrap_or_else(|_| "mnemo".into());
-    let user = std::env::var("SURREALDB_USER").unwrap_or_else(|_| "root".into());
-    let pass = std::env::var("SURREALDB_PASS").unwrap_or_else(|_| "root".into());
+    let client = match SurrealRpcClient::get().await {
+        Ok(c) => c,
+        Err(err) => {
+            tracing::error!("Surreal RPC init failed: {err}");
+            return Json(GraphSnapshot {
+                total_nodes: 0,
+                returned: 0,
+                limit,
+                offset,
+                nodes: Vec::new(),
+                edges: Vec::new(),
+            });
+        }
+    };
 
     let mut nodes: Vec<GraphNode> = Vec::new();
     let mut edges: Vec<GraphEdge> = Vec::new();
@@ -125,16 +95,7 @@ pub async fn graph_snapshot(Query(params): Query<SnapshotParams>) -> Json<GraphS
             .unwrap_or_else(|| "node".into())
     };
 
-    let file_rows = fetch_sql(
-        &client,
-        &surreal_url,
-        "SELECT id, path, namespace FROM file;",
-        &ns,
-        &db,
-        &user,
-        &pass,
-    )
-    .await;
+    let file_rows = fetch_rows(client, "SELECT id, path, namespace FROM file;").await;
     tracing::info!(
         "Graph snapshot: fetched {} file rows (sample={:?})",
         file_rows.len(),
@@ -150,16 +111,8 @@ pub async fn graph_snapshot(Query(params): Query<SnapshotParams>) -> Json<GraphS
         }
     }
 
-    let chunk_rows = fetch_sql(
-        &client,
-        &surreal_url,
-        "SELECT id, path, namespace, chunk_index FROM chunk;",
-        &ns,
-        &db,
-        &user,
-        &pass,
-    )
-    .await;
+    let chunk_rows =
+        fetch_rows(client, "SELECT id, path, namespace, chunk_index FROM chunk;").await;
     tracing::info!("Graph snapshot: fetched {} chunk rows", chunk_rows.len());
     for v in chunk_rows {
         if let Some(id) = v.get("id").and_then(extract_id) {
@@ -178,9 +131,7 @@ pub async fn graph_snapshot(Query(params): Query<SnapshotParams>) -> Json<GraphS
         }
     }
 
-    let edge_rows =
-        fetch_sql(&client, &surreal_url, "SELECT in, out FROM contains;", &ns, &db, &user, &pass)
-            .await;
+    let edge_rows = fetch_rows(client, "SELECT in, out FROM contains;").await;
     tracing::info!(
         "Graph snapshot: fetched {} edge rows (sample={:?})",
         edge_rows.len(),
@@ -225,44 +176,23 @@ pub async fn graph_snapshot(Query(params): Query<SnapshotParams>) -> Json<GraphS
 }
 
 pub async fn graph_debug() -> Json<serde_json::Value> {
-    let surreal_url =
-        std::env::var("SURREALDB_URL").unwrap_or_else(|_| "http://localhost:8000".into());
-    let client = reqwest::Client::new();
-    let ns = std::env::var("SURREALDB_NS").unwrap_or_else(|_| "mnemo".into());
-    let db = std::env::var("SURREALDB_DB").unwrap_or_else(|_| "mnemo".into());
-    let user = std::env::var("SURREALDB_USER").unwrap_or_else(|_| "root".into());
-    let pass = std::env::var("SURREALDB_PASS").unwrap_or_else(|_| "root".into());
+    let client = match SurrealRpcClient::get().await {
+        Ok(c) => c,
+        Err(err) => {
+            tracing::error!("Surreal RPC init failed: {err}");
+            return Json(serde_json::json!({
+                "files": [],
+                "chunks": [],
+                "edges": [],
+                "error": err.to_string()
+            }));
+        }
+    };
 
-    let files = fetch_sql(
-        &client,
-        &surreal_url,
-        "SELECT id, path, namespace FROM file;",
-        &ns,
-        &db,
-        &user,
-        &pass,
-    )
-    .await;
-    let chunks = fetch_sql(
-        &client,
-        &surreal_url,
-        "SELECT id, path, namespace, chunk_index FROM chunk;",
-        &ns,
-        &db,
-        &user,
-        &pass,
-    )
-    .await;
-    let edges = fetch_sql(
-        &client,
-        &surreal_url,
-        "SELECT in, out FROM contains;",
-        &ns,
-        &db,
-        &user,
-        &pass,
-    )
-    .await;
+    let files = fetch_rows(client, "SELECT id, path, namespace FROM file;").await;
+    let chunks =
+        fetch_rows(client, "SELECT id, path, namespace, chunk_index FROM chunk;").await;
+    let edges = fetch_rows(client, "SELECT in, out FROM contains;").await;
 
     tracing::info!(
         "Graph debug: files={}, chunks={}, edges={}",

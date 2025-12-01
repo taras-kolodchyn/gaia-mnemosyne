@@ -39,5 +39,18 @@ run:
 
 migrate:
 	cd backend && (command -v sqlx >/dev/null 2>&1 || cargo install sqlx-cli --no-default-features --features postgres) && \
-	psql "$${DATABASE_URL:-postgres://mnemo:mnemo@localhost:5432/mnemo}" -c "DROP TABLE IF EXISTS _sqlx_migrations;" >/dev/null 2>&1 || true ; \
-	sqlx migrate run --source migrations/postgres
+	URL="$${DATABASE_URL:-postgres://mnemo:mnemo@127.0.0.1:5432/mnemo}" ; \
+	printf "Waiting for Postgres at %s ...\n" "$$URL" ; \
+	for i in $$(seq 1 30); do \
+		if psql "$$URL" -c "SELECT 1" >/dev/null 2>&1; then \
+			printf "Postgres is ready\n" ; \
+			break ; \
+		fi ; \
+		sleep 2 ; \
+		if [ $$i -eq 30 ]; then \
+			echo "Postgres not ready after waiting" ; \
+			exit 1 ; \
+		fi ; \
+	done ; \
+	psql "$$URL" -c "DROP TABLE IF EXISTS _sqlx_migrations;" >/dev/null 2>&1 || true ; \
+	sqlx migrate run --source migrations/postgres --database-url "$$URL"

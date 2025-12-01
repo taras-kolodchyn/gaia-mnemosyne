@@ -9,13 +9,18 @@ services:
     environment:
       - SURREALDB_USER=${SURREALDB_USER:-root}
       - SURREALDB_PASS=${SURREALDB_PASS:-root}
+      - SURREAL_DISABLE_ENV_CHECK=true
     command: >
-      start --log debug --user ${SURREALDB_USER:-root} --pass ${SURREALDB_PASS:-root} memory
+      start
+      --log debug
+      --username ${SURREALDB_USER:-root}
+      --password ${SURREALDB_PASS:-root}
+      --bind 0.0.0.0:8000
     ports:
       - "8000:8000"
 
   redis:
-    image: redis:7
+    image: redis:8
     ports:
       - "6379:6379"
 
@@ -27,8 +32,11 @@ services:
     image: mnemo-api-service:latest
     environment:
       - SURREALDB_URL=${SURREALDB_URL:-http://surrealdb:8000}
+      - SURREALDB_RPC_URL=${SURREALDB_RPC_URL:-ws://surrealdb:8000}
       - SURREALDB_USER=${SURREALDB_USER:-root}
       - SURREALDB_PASS=${SURREALDB_PASS:-root}
+      - SURREALDB_NS=${SURREALDB_NS:-mnemo}
+      - SURREALDB_DB=${SURREALDB_DB:-mnemo}
       - DATABASE_URL=${DATABASE_URL:-postgres://mnemo:mnemo@postgres:5432/mnemo}
       - QDRANT_URL=${QDRANT_URL:-http://qdrant:6333}
       - INGESTION_ROOT=/mnt/host_downloads
