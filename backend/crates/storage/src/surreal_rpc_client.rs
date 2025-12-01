@@ -41,7 +41,6 @@ impl SurrealRpcClient {
         let mut out: Vec<Value> = Vec::new();
         let num = resp.num_statements();
         for i in 0..num {
-            // Try to read a list of values first (SELECT), otherwise fall back to a single value (INSERT/UPSERT).
             match resp.take::<Vec<SurrealValue>>(i) {
                 Ok(values) => {
                     for v in values {
@@ -50,9 +49,6 @@ impl SurrealRpcClient {
                 }
                 Err(e) => {
                     tracing::trace!("Surreal RPC take list failed (idx {i}): {e}");
-                    if let Ok(single) = resp.take::<SurrealValue>(i) {
-                        out.push(single.into_json());
-                    }
                 }
             }
         }
