@@ -2,7 +2,8 @@ use axum::{Json, extract::Path};
 use mnemo_storage::surreal_store::SurrealStore;
 use serde::Deserialize;
 use serde::Serialize;
-use surrealdb::sql::Thing;
+use std::collections::HashSet;
+use surrealdb::sql::{Id, Thing};
 
 #[derive(Serialize)]
 pub struct Neighbor {
@@ -35,19 +36,37 @@ struct NeighborRow {
     neighbor: Thing,
 }
 
-fn parse_thing(id: &str) -> Option<Thing> {
-    if let Ok(t) = id.parse::<Thing>() {
-        return Some(t);
+fn normalize_thing(mut thing: Thing, expected_tb: &str) -> Thing {
+    let mut id_str = match thing.id {
+        Id::String(s) => s,
+        Id::Number(n) => n.to_string(),
+        Id::Uuid(u) => u.to_string(),
+        other => other.to_string(),
+    };
+    if let Some((_, rest)) = id_str.split_once(':') {
+        id_str = rest.to_string();
     }
-    if !id.contains(':') {
-        if let Ok(t) = format!("file:{id}").parse::<Thing>() {
-            return Some(t);
-        }
-        if let Ok(t) = format!("chunk:{id}").parse::<Thing>() {
-            return Some(t);
-        }
+    Thing::from((expected_tb, id_str.as_str()))
+}
+
+fn thing_to_string(t: &Thing) -> String {
+    t.to_string()
+}
+
+fn infer_expected_tb(id_str: &str) -> &str {
+    if id_str.starts_with("chunk:") {
+        "chunk"
+    } else if id_str.starts_with("file:") {
+        "file"
+    } else {
+        "file"
     }
-    None
+}
+
+fn parse_thing(id: &str) -> Thing {
+    let expected = infer_expected_tb(id);
+    let thing = Thing::from((expected, id));
+    normalize_thing(thing, expected)
 }
 
 fn format_label(row: &NodeQueryRow) -> String {
@@ -60,17 +79,7 @@ fn format_label(row: &NodeQueryRow) -> String {
 }
 
 pub async fn graph_node(Path(id): Path<String>) -> Json<GraphNodeDetail> {
-    let node_thing = match parse_thing(&id) {
-        Some(t) => t,
-        None => {
-            return Json(GraphNodeDetail {
-                id: id.clone(),
-                label: id.clone(),
-                node_type: "unknown".into(),
-                neighbors: Vec::new(),
-            });
-        }
-    };
+    let node_thing = parse_thing(&id);
 
     let store = match SurrealStore::get().await {
         Ok(c) => c,
@@ -97,9 +106,17 @@ pub async fn graph_node(Path(id): Path<String>) -> Json<GraphNodeDetail> {
 
     let mut node_type = "unknown".to_string();
     let mut label = id.clone();
+    let mut response_id = id.clone();
     if let Some(row) = node_rows.get(0) {
+        let expected = if row.kind == "chunk" { "chunk" } else { "file" };
+        let norm_id = normalize_thing(row.id.clone(), expected);
         node_type = row.kind.clone();
         label = format_label(row);
+        let norm_id_str = thing_to_string(&norm_id);
+        response_id = norm_id_str.clone();
+        if norm_id_str != id {
+            tracing::debug!("Normalized node id {} -> {}", id, norm_id_str);
+        }
     }
 
     let neighbor_sql = r#"
@@ -112,17 +129,34 @@ pub async fn graph_node(Path(id): Path<String>) -> Json<GraphNodeDetail> {
     tracing::info!("Graph node neighbors raw rows={}", neighbor_rows.len());
 
     let mut neighbors = Vec::new();
+    let mut neighbor_seen: HashSet<String> = HashSet::new();
     for row in neighbor_rows {
-        let other = row.neighbor;
+        let mut other = row.neighbor;
+        let other_str = other.to_string();
+        let expected_neighbor_tb = match node_type.as_str() {
+            "file" => "chunk",
+            "chunk" => "file",
+            _ => infer_expected_tb(&other_str),
+        };
+        other = normalize_thing(other, expected_neighbor_tb);
+        let other_id_str = thing_to_string(&other);
+        if !neighbor_seen.insert(other_id_str.clone()) {
+            continue;
+        }
         let info_rows: Vec<NodeQueryRow> =
             store.query_typed_bind(node_sql, ("id", other.clone())).await.unwrap_or_default();
-        let (mut n_label, mut n_type) = (other.to_string(), "unknown".to_string());
+        let (mut n_label, mut n_type) = (other_id_str.clone(), "unknown".to_string());
         if let Some(nr) = info_rows.get(0) {
+            let expected_tb = if nr.kind == "chunk" { "chunk" } else { "file" };
+            let normalized = normalize_thing(nr.id.clone(), expected_tb);
+            let normalized_id = thing_to_string(&normalized);
             n_type = nr.kind.clone();
             n_label = format_label(nr);
+            neighbors.push(Neighbor { id: normalized_id, label: n_label, node_type: n_type });
+        } else {
+            neighbors.push(Neighbor { id: other_id_str, label: n_label, node_type: n_type });
         }
-        neighbors.push(Neighbor { id: other.to_string(), label: n_label, node_type: n_type });
     }
 
-    Json(GraphNodeDetail { id: id.clone(), label, node_type, neighbors })
+    Json(GraphNodeDetail { id: response_id, label, node_type, neighbors })
 }

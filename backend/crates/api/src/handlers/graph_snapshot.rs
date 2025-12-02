@@ -1,8 +1,9 @@
 use axum::{Json, extract::Query};
 use mnemo_storage::surreal_store::SurrealStore;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::collections::HashSet;
-use surrealdb::sql::Thing;
+use surrealdb::sql::{Id, Thing};
 
 #[derive(Serialize, Clone)]
 pub struct GraphNode {
@@ -62,6 +63,23 @@ struct EdgeRow {
     out: Thing,
 }
 
+fn normalize_thing(mut thing: Thing, expected_tb: &str) -> Thing {
+    let mut id_str = match thing.id {
+        Id::String(s) => s,
+        Id::Number(n) => n.to_string(),
+        Id::Uuid(u) => u.to_string(),
+        other => other.to_string(),
+    };
+    if let Some((_, rest)) = id_str.split_once(':') {
+        id_str = rest.to_string();
+    }
+    Thing::from((expected_tb, id_str.as_str()))
+}
+
+fn thing_to_string(thing: &Thing) -> String {
+    thing.to_string()
+}
+
 pub async fn graph_snapshot(Query(params): Query<SnapshotParams>) -> Json<GraphSnapshot> {
     let limit = params.limit.unwrap_or(500);
     let offset = params.offset.unwrap_or(0);
@@ -97,8 +115,13 @@ pub async fn graph_snapshot(Query(params): Query<SnapshotParams>) -> Json<GraphS
         file_rows.len(),
         file_rows.iter().take(3).collect::<Vec<_>>()
     );
-    for row in file_rows {
-        let id = row.id.to_string();
+    let mut node_ids: HashSet<String> = HashSet::new();
+    for mut row in file_rows {
+        row.id = normalize_thing(row.id, "file");
+        let id = thing_to_string(&row.id);
+        if !node_ids.insert(id.clone()) {
+            continue;
+        }
         nodes.push(GraphNode {
             id: id.clone(),
             data: GraphNodeData { label: row.path },
@@ -115,8 +138,12 @@ pub async fn graph_snapshot(Query(params): Query<SnapshotParams>) -> Json<GraphS
             }
         };
     tracing::info!("Graph snapshot: fetched {} chunk rows", chunk_rows.len());
-    for row in chunk_rows {
-        let id = row.id.to_string();
+    for mut row in chunk_rows {
+        row.id = normalize_thing(row.id, "chunk");
+        let id = thing_to_string(&row.id);
+        if !node_ids.insert(id.clone()) {
+            continue;
+        }
         let label = format!("{}#{}", row.path, row.chunk_index);
         nodes.push(GraphNode {
             id: id.clone(),
@@ -137,11 +164,16 @@ pub async fn graph_snapshot(Query(params): Query<SnapshotParams>) -> Json<GraphS
         edge_rows.len(),
         edge_rows.iter().take(3).collect::<Vec<_>>()
     );
-    for row in edge_rows {
-        let source = row.in_node.to_string();
-        let target = row.out.to_string();
+    let mut edge_ids: HashSet<String> = HashSet::new();
+    for mut row in edge_rows {
+        row.in_node = normalize_thing(row.in_node, "file");
+        row.out = normalize_thing(row.out, "chunk");
+        let source = thing_to_string(&row.in_node);
+        let target = thing_to_string(&row.out);
         let id = format!("{}->{}", source, target);
-        edges.push(GraphEdge { id, source, target });
+        if edge_ids.insert(id.clone()) {
+            edges.push(GraphEdge { id, source, target });
+        }
     }
 
     // Apply pagination to nodes and filter edges to returned nodes.
@@ -201,9 +233,44 @@ pub async fn graph_debug() -> Json<serde_json::Value> {
         edges.len()
     );
 
+    let files_json: Vec<Value> = files
+        .into_iter()
+        .map(|mut f| {
+            f.id = normalize_thing(f.id, "file");
+            serde_json::json!({
+                "id": thing_to_string(&f.id),
+                "namespace": f.namespace,
+                "path": f.path
+            })
+        })
+        .collect();
+    let chunks_json: Vec<Value> = chunks
+        .into_iter()
+        .map(|mut c| {
+            c.id = normalize_thing(c.id, "chunk");
+            serde_json::json!({
+                "id": thing_to_string(&c.id),
+                "namespace": c.namespace,
+                "path": c.path,
+                "chunk_index": c.chunk_index
+            })
+        })
+        .collect();
+    let edges_json: Vec<Value> = edges
+        .into_iter()
+        .map(|mut e| {
+            e.in_node = normalize_thing(e.in_node, "file");
+            e.out = normalize_thing(e.out, "chunk");
+            serde_json::json!({
+                "in": thing_to_string(&e.in_node),
+                "out": thing_to_string(&e.out)
+            })
+        })
+        .collect();
+
     Json(serde_json::json!({
-        "files": files,
-        "chunks": chunks,
-        "edges": edges
+        "files": files_json,
+        "chunks": chunks_json,
+        "edges": edges_json
     }))
 }
