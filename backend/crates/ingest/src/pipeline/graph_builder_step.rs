@@ -5,7 +5,7 @@ use serde_json::json;
 use sha2::{Digest, Sha256};
 
 use super::{data::PipelineData, step::PipelineStep};
-use mnemo_storage::surreal_rpc_client::SurrealRpcClient;
+use mnemo_storage::surreal_store::SurrealStore;
 
 fn broadcast_step(job_id: &Option<String>, step: &str, status: &str) {
     if let Some(id) = job_id {
@@ -42,7 +42,7 @@ impl PipelineStep for GraphBuilderStep {
         let job_id = data.job_id.clone();
         broadcast_step(&job_id, "graph_upsert", "running");
         let result: MnemoResult<PipelineData> = async {
-            let client = SurrealRpcClient::get().await?;
+            let store = SurrealStore::get().await?;
             let mut statements: Vec<String> = Vec::new();
 
             for doc in &data.documents {
@@ -50,9 +50,9 @@ impl PipelineStep for GraphBuilderStep {
                 let path = doc.path.replace('\'', "''");
                 let ns = doc.namespace.replace('\'', "''");
                 // Use delete+insert to avoid Surreal 2.x upsert syntax issues.
-                statements.push(format!("DELETE FROM file WHERE id = '{file_id}';"));
+                statements.push(format!("DELETE FROM file WHERE id = {file_id};"));
                 statements.push(format!(
-                    "INSERT INTO file (id, path, namespace) VALUES ('{file_id}', '{path}', '{ns}');",
+                    "INSERT INTO file (id, path, namespace) VALUES ({file_id}, '{path}', '{ns}');",
                     file_id = file_id,
                     path = path,
                     ns = ns
@@ -67,18 +67,18 @@ impl PipelineStep for GraphBuilderStep {
                 );
                 let path = chunk.document_path.replace('\'', "''");
                 let ns = chunk.namespace.replace('\'', "''");
-                statements.push(format!("DELETE FROM chunk WHERE id = '{chunk_id}';", chunk_id = chunk_id));
+                statements.push(format!("DELETE FROM chunk WHERE id = {chunk_id};", chunk_id = chunk_id));
                 statements.push(format!(
-                    "INSERT INTO chunk (id, path, namespace, chunk_index) VALUES ('{chunk_id}', '{path}', '{ns}', {idx});",
+                    "INSERT INTO chunk (id, path, namespace, chunk_index) VALUES ({chunk_id}, '{path}', '{ns}', {idx});",
                     chunk_id = chunk_id,
                     path = path,
                     ns = ns,
                     idx = chunk.chunk_index as i32,
                 ));
-                let edge_id = hash_id(&format!("{file_id}->{chunk_id}"));
-                statements.push(format!("DELETE FROM contains WHERE id = '{edge_id}';", edge_id = edge_id));
+                let edge_id = format!("contains:{}", hash_id(&format!("{file_id}->{chunk_id}")));
+                statements.push(format!("DELETE FROM contains WHERE id = {edge_id};", edge_id = edge_id));
                 statements.push(format!(
-                    "INSERT INTO contains (id, in, out, relation) VALUES ('{edge_id}', '{file_id}', '{chunk_id}', 'contains');",
+                    "INSERT INTO contains (id, in, out, relation) VALUES ({edge_id}, {file_id}, {chunk_id}, 'contains');",
                     edge_id = edge_id,
                     file_id = file_id,
                     chunk_id = chunk_id
@@ -100,9 +100,9 @@ impl PipelineStep for GraphBuilderStep {
             );
 
             for stmt in statements {
-                tracing::debug!("Surreal RPC exec: {}", stmt);
-                if let Err(err) = client.query(&stmt).await {
-                    tracing::error!("Surreal RPC statement failed: {err}");
+                tracing::debug!("Surreal exec: {}", stmt);
+                if let Err(err) = store.exec(&stmt).await {
+                    tracing::error!("Surreal statement failed: {err}");
                     let _ = WS_HUB.broadcast(
                         json!({"event":"ingest_step","job_id": job_id,"step":"graph_upsert","status":"failed"}).to_string(),
                     );
@@ -111,30 +111,27 @@ impl PipelineStep for GraphBuilderStep {
             }
 
             // Debug counts to confirm graph records are actually persisted.
-            let file_count = client
-                .query("SELECT count() AS c FROM file;")
-                .await
-                .unwrap_or_default()
-                .get(0)
-                .and_then(|v| v.get("c"))
-                .and_then(|c| c.as_i64())
-                .unwrap_or(0);
-            let chunk_count = client
-                .query("SELECT count() AS c FROM chunk;")
-                .await
-                .unwrap_or_default()
-                .get(0)
-                .and_then(|v| v.get("c"))
-                .and_then(|c| c.as_i64())
-                .unwrap_or(0);
-            let edge_count = client
-                .query("SELECT count() AS c FROM contains;")
-                .await
-                .unwrap_or_default()
-                .get(0)
-                .and_then(|v| v.get("c"))
-                .and_then(|c| c.as_i64())
-                .unwrap_or(0);
+            let file_count = match store.select_count("SELECT count() AS c FROM file;").await {
+                Ok(c) => c,
+                Err(err) => {
+                    tracing::error!("Surreal file count failed: {err}");
+                    0
+                }
+            };
+            let chunk_count = match store.select_count("SELECT count() AS c FROM chunk;").await {
+                Ok(c) => c,
+                Err(err) => {
+                    tracing::error!("Surreal chunk count failed: {err}");
+                    0
+                }
+            };
+            let edge_count = match store.select_count("SELECT count() AS c FROM contains;").await {
+                Ok(c) => c,
+                Err(err) => {
+                    tracing::error!("Surreal edge count failed: {err}");
+                    0
+                }
+            };
             tracing::info!(
                 "Surreal graph counts after upsert: files={}, chunks={}, edges={}",
                 file_count,

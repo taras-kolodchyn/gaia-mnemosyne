@@ -20,3 +20,8 @@ version = "0.1.0"
 
 [workspace.dependencies]
 criterion = "0.5"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-opentelemetry = "0.22"
+opentelemetry = "0.23"
+opentelemetry-otlp = "0.16"

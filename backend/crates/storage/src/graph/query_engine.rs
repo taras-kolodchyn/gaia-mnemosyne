@@ -1,7 +1,8 @@
 use super::graph_engine::GraphEngine;
+use crate::surreal_store::SurrealStore;
 use mnemo_core::error::MnemoResult;
-use crate::surreal_rpc_client::SurrealRpcClient;
 use serde::Serialize;
+use serde_json::Value;
 use std::collections::{HashSet, VecDeque};
 
 /// Wrapper providing a unified graph query interface.
@@ -37,10 +38,10 @@ impl GraphQueryEngine {
         start: &str,
         depth: usize,
     ) -> MnemoResult<GraphExpansion> {
-        let rpc = match SurrealRpcClient::get().await {
+        let store = match SurrealStore::get().await {
             Ok(c) => c,
             Err(err) => {
-                tracing::error!("Surreal RPC init failed: {err}");
+                tracing::error!("Surreal init failed: {err}");
                 return Ok(GraphExpansion { nodes: vec![start.to_string()], edges: Vec::new() });
             }
         };
@@ -51,7 +52,7 @@ impl GraphQueryEngine {
         frontier.push_back((start.to_string(), 0));
         visited.insert(start.to_string());
 
-        let extract_id = |v: &serde_json::Value| -> Option<String> {
+        let extract_id = |v: &Value| -> Option<String> {
             if let Some(s) = v.as_str() {
                 return Some(s.to_string());
             }
@@ -73,7 +74,7 @@ impl GraphQueryEngine {
                 "SELECT in, out FROM contains WHERE in = '{}' OR out = '{}' LIMIT 100;",
                 node, node
             );
-            let rows = match rpc.query(&sql).await {
+            let rows = match store.select_all(&sql).await {
                 Ok(r) => r,
                 Err(err) => {
                     tracing::error!("Surreal expand_with_edges query failed: {err}");

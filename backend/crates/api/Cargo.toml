@@ -26,3 +26,4 @@ tracing = "0.1"
 utoipa = { version = "4" }
 utoipa-swagger-ui = { version = "7", features = ["axum"] }
 futures-util = "0.3"
+surrealdb = { version = "2", default-features = false, features = ["protocol-ws"] }

@@ -9,3 +9,8 @@ axum = "0.7"
 tokio = { version = "1", features = ["full"] }
 mnemo-core = { path = "../../crates/core" }
 tower-http = { version = "0.5", features = ["cors"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+tracing-opentelemetry = { workspace = true }
+opentelemetry = { workspace = true }
+opentelemetry-otlp = { workspace = true }

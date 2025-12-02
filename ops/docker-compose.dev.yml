@@ -12,7 +12,7 @@ services:
       - SURREAL_DISABLE_ENV_CHECK=true
     command: >
       start
-      --log debug
+      --log info
       --username ${SURREALDB_USER:-root}
       --password ${SURREALDB_PASS:-root}
       --bind 0.0.0.0:8000
@@ -40,6 +40,8 @@ services:
       - DATABASE_URL=${DATABASE_URL:-postgres://mnemo:mnemo@postgres:5432/mnemo}
       - QDRANT_URL=${QDRANT_URL:-http://qdrant:6333}
       - INGESTION_ROOT=/mnt/host_downloads
+      # Default to info; raise to debug/trace locally by exporting RUST_LOG before compose.
+      - RUST_LOG=${RUST_LOG:-info}
     ports:
       - "7700:7700"
     volumes:
