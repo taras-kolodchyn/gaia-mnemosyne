@@ -1,0 +1,16 @@
+################################################################################
+# TensorZero Gateway Configuration (Dev Profile)
+################################################################################
+
+###############################################################################
+# Model: Qwen3-8B via Ollama (OpenAI-compatible proxy)
+###############################################################################
+
+[models.qwen3_8b]
+routing = ["local"]
+
+  [models.qwen3_8b.providers.local]
+  type = "openai"
+  api_base = "http://host.docker.internal:11434/v1"
+  model_name = "qwen3:8b"
+  api_key_location = "none"

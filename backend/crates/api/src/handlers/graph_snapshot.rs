@@ -63,7 +63,7 @@ struct EdgeRow {
     out: Thing,
 }
 
-fn normalize_thing(mut thing: Thing, expected_tb: &str) -> Thing {
+fn normalize_thing(thing: Thing, expected_tb: &str) -> Thing {
     let mut id_str = match thing.id {
         Id::String(s) => s,
         Id::Number(n) => n.to_string(),

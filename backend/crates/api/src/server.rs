@@ -1,3 +1,4 @@
+use crate::config::AppConfig;
 use crate::handlers;
 use crate::handlers::ingestion_metrics::ingestion_metrics;
 use crate::middleware::rate_limiter::rate_limit;
@@ -12,6 +13,7 @@ use axum::{
     Json, Router, middleware,
     routing::{get, post},
 };
+use reqwest;
 use tower_http::{
     cors::{Any, CorsLayer},
     trace::TraceLayer,
@@ -21,6 +23,8 @@ use tracing::warn;
 
 pub fn build_router() -> Router {
     validate_env_vars();
+    let cfg = AppConfig::from_env();
+    spawn_llm_healthcheck(cfg.clone());
 
     // Permissive CORS for local development; adjust for production.
     let cors = CorsLayer::new().allow_origin(Any).allow_methods(Any).allow_headers(Any);
@@ -87,4 +91,35 @@ fn validate_env_vars() {
     check("SURREALDB_URL");
     check("REDIS_URL");
     check("POSTGRES_URL");
+    check("MNEMO_LLM_PROVIDER");
+    check("MNEMO_LLM_URL");
+    check("MNEMO_LLM_MODEL");
+}
+
+fn spawn_llm_healthcheck(cfg: AppConfig) {
+    let llm_url = cfg.llm.url.clone();
+    let api_key = cfg.llm.api_key.clone();
+    tokio::spawn(async move {
+        let endpoint = format!("{}/status", llm_url.trim_end_matches('/'));
+        let client = reqwest::Client::new();
+        let req = client
+            .get(&endpoint)
+            .header(reqwest::header::AUTHORIZATION, format!("Bearer {}", api_key));
+        match req.send().await {
+            Ok(resp) => {
+                if resp.status().is_success() {
+                    tracing::info!("[LLM] TensorZero healthy at {}", endpoint);
+                } else {
+                    tracing::warn!(
+                        "[LLM] WARNING: TensorZero unreachable: {} status={}",
+                        endpoint,
+                        resp.status()
+                    );
+                }
+            }
+            Err(err) => {
+                tracing::warn!("[LLM] WARNING: TensorZero unreachable: {} error={}", endpoint, err);
+            }
+        }
+    });
 }

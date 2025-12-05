@@ -1,6 +1,14 @@
 up:
+	@chmod +x scripts/start_ollama.sh 2>/dev/null || true
+	bash scripts/start_ollama.sh
 	docker compose -f ops/docker-compose.dev.yml up -d
 	$(MAKE) migrate
+
+up-tensorzero:
+	docker compose -f ops/docker-compose.dev.yml up -d tensorzero tensorzero-ui
+
+logs-tensorzero:
+	docker logs -f tensorzero-gateway
 
 down:
 	docker compose -f ops/docker-compose.dev.yml down

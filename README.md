@@ -74,6 +74,20 @@ cd ui && npm install && npm run dev
 - Surreal 400 errors: ensure SurrealDB 2.x running and IDs are hashed; check logs in Pipeline Monitor.
 - CORS/WS: server.rs uses permissive CORS; confirm API at `http://localhost:7700`.
 
+## Local LLM (Ollama on macOS M1)
+- Mnemo can talk to a local Ollama endpoint; set:
+  - `MNEMO_LLM_BASE_URL` (e.g., `http://host.docker.internal:11434` for Docker on macOS)
+  - `MNEMO_LLM_MODEL` (default `qwen2.5:7b`)
+- See `docs/infra/ollama-local-llm.md` for setup, model pull, and health checks (`scripts/check-ollama-llm.sh`).
+
+## TensorZero LLM Proxy
+- Mnemo API is wired to use TensorZero as the LLM gateway (not Ollama directly).
+- Set:
+  - `MNEMO_LLM_PROVIDER=tensorzero`
+  - `MNEMO_LLM_URL=http://host.docker.internal:9090`
+  - `MNEMO_LLM_MODEL=qwen2.5:7b`
+- See `docs/infra/tensorzero-setup.md` and `docs/infra/llm.md` for setup, wiring, and health checks (`scripts/run-tensorzero-local.sh`, `scripts/check-tensorzero.sh`).
+
 ## Roadmap
 - Provider auto-discovery and GitHub/OpenAPI enrichment
 - Real embedding engines integration

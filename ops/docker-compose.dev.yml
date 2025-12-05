@@ -39,6 +39,10 @@ services:
       - SURREALDB_DB=${SURREALDB_DB:-mnemo}
       - DATABASE_URL=${DATABASE_URL:-postgres://mnemo:mnemo@postgres:5432/mnemo}
       - QDRANT_URL=${QDRANT_URL:-http://qdrant:6333}
+      - MNEMO_LLM_PROVIDER=${MNEMO_LLM_PROVIDER:-tensorzero}
+      - MNEMO_LLM_URL=${MNEMO_LLM_URL:-http://tensorzero:3000}
+      - MNEMO_LLM_API_KEY=${MNEMO_LLM_API_KEY:-none}
+      - MNEMO_LLM_MODEL=${MNEMO_LLM_MODEL:-qwen3:8b}
       - INGESTION_ROOT=/mnt/host_downloads
       # Default to info; raise to debug/trace locally by exporting RUST_LOG before compose.
       - RUST_LOG=${RUST_LOG:-info}
@@ -60,6 +64,104 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mnemo -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  tensorzero:
+    image: tensorzero/gateway:2025.11.6
+    restart: unless-stopped
+    command: --config-file /app/config/tensorzero.toml --log-format json
+    volumes:
+      - ./tensorzero-config:/app/config:ro
+    ports:
+      - "3000:3000"
+    environment:
+      - TENSORZERO_POSTGRES_URL=postgres://mnemo:mnemo@postgres:5432/tensorzero
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: wget --spider --tries 1 http://localhost:3000/status
+      interval: 15s
+      timeout: 1s
+      retries: 2
+    depends_on:
+      tensorzero-db-init:
+        condition: service_completed_successfully
+      tensorzero-migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      clickhouse:
+        condition: service_started
+
+  tensorzero-db-init:
+    image: postgres:18
+    command:
+      - sh
+      - -c
+      - >
+        psql -h postgres -U mnemo -tc "SELECT 1 FROM pg_database WHERE datname='tensorzero'"
+        | grep -q 1
+        || psql -h postgres -U mnemo -c "CREATE DATABASE tensorzero"
+    environment:
+      - PGPASSWORD=mnemo
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  tensorzero-migrate:
+    image: tensorzero/gateway:2025.11.6
+    command: --run-postgres-migrations
+    restart: "no"
+    environment:
+      - TENSORZERO_POSTGRES_URL=postgres://mnemo:mnemo@postgres:5432/tensorzero
+    depends_on:
+      postgres:
+        condition: service_healthy
+      tensorzero-db-init:
+        condition: service_completed_successfully
+
+  tensorzero-ui:
+    image: tensorzero/ui
+    container_name: tensorzero-ui
+    restart: unless-stopped
+    volumes:
+      - ./tensorzero-config:/app/config:ro
+    environment:
+      - TENSORZERO_GATEWAY_URL=http://tensorzero:3000
+      - TENSORZERO_POSTGRES_URL=postgres://mnemo:mnemo@postgres:5432/tensorzero
+      - TENSORZERO_CLICKHOUSE_URL=http://tensorzero:tensorzero@clickhouse:8123/tensorzero_ui
+      # Enable read-only mode if desired:
+      # - TENSORZERO_UI_READ_ONLY=1
+      # For local testing against OpenAI, set:
+      # - ENABLE_TEST_WITH_OPENAI_API=true
+      # - OPENAI_API_KEY=your_key
+    ports:
+      - "4000:4000"
+    depends_on:
+      - tensorzero
+      - postgres
+      - clickhouse
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.8
+    container_name: clickhouse
+    restart: unless-stopped
+    ports:
+      - "8123:8123"
+    environment:
+      - CLICKHOUSE_DB=tensorzero_ui
+      - CLICKHOUSE_USER=tensorzero
+      - CLICKHOUSE_PASSWORD=tensorzero
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
 
 volumes:
   postgres_data:
