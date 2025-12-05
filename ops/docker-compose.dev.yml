@@ -81,6 +81,7 @@ services:
       - "3000:3000"
     environment:
       - TENSORZERO_POSTGRES_URL=postgres://mnemo:mnemo@postgres:5432/tensorzero
+      - TENSORZERO_CLICKHOUSE_URL=http://tensorzero:tensorzero@clickhouse:8123/tensorzero
     extra_hosts:
       - "host.docker.internal:host-gateway"
     healthcheck:
@@ -96,7 +97,7 @@ services:
       postgres:
         condition: service_healthy
       clickhouse:
-        condition: service_started
+        condition: service_healthy
 
   tensorzero-db-init:
     image: postgres:18
@@ -149,15 +150,23 @@ services:
       - clickhouse
 
   clickhouse:
-    image: clickhouse/clickhouse-server:24.8
+    image: clickhouse:lts
     container_name: clickhouse
     restart: unless-stopped
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
     ports:
       - "8123:8123"
     environment:
       - CLICKHOUSE_DB=tensorzero_ui
       - CLICKHOUSE_USER=tensorzero
       - CLICKHOUSE_PASSWORD=tensorzero
+      - CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1
+    healthcheck:
+      test: wget --spider --tries 1 http://tensorzero:tensorzero@clickhouse:8123/ping
+      start_period: 30s
+      start_interval: 1s
+      timeout: 1s  
     ulimits:
       nofile:
         soft: 262144
@@ -165,3 +174,4 @@ services:
 
 volumes:
   postgres_data:
+  clickhouse-data:

@@ -2,6 +2,23 @@
 # TensorZero Gateway Configuration (Dev Profile)
 ################################################################################
 
+#[server]
+#host = "0.0.0.0"
+#port = 3000
+#workers = 4
+#enable_cors = true
+#ui_auth_token = "dev-token"
+
+
+[gateway]
+#enable_openai_api = true
+#openai_api_prefix = "/v1"
+disable_pseudonymous_usage_analytics = true
+
+#[security]
+#secret_key = "local-dev-secret"
+#signed_requests = false
+
 ###############################################################################
 # Model: Qwen3-8B via Ollama (OpenAI-compatible proxy)
 ###############################################################################
@@ -14,3 +31,12 @@ routing = ["local"]
   api_base = "http://host.docker.internal:11434/v1"
   model_name = "qwen3:8b"
   api_key_location = "none"
+  timeouts = { non_streaming.total_ms = 45000, streaming.ttft_ms = 3000 }
+
+###############################################################################
+# Profiles
+###############################################################################
+
+#[profiles.dev]
+#default = true
+#description = "Local development"
