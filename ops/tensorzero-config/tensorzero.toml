@@ -11,13 +11,16 @@
 
 
 [gateway]
-#enable_openai_api = true
-#openai_api_prefix = "/v1"
 disable_pseudonymous_usage_analytics = true
 
 #[security]
 #secret_key = "local-dev-secret"
 #signed_requests = false
+
+# ┌────────────────────────────────────────────────────────────────────────────┐
+# │                                   MODELS                                   │
+# └────────────────────────────────────────────────────────────────────────────┘
+
 
 ###############################################################################
 # Model: Qwen3-8B via Ollama (OpenAI-compatible proxy)
@@ -31,12 +34,45 @@ routing = ["local"]
   api_base = "http://host.docker.internal:11434/v1"
   model_name = "qwen3:8b"
   api_key_location = "none"
-  timeouts = { non_streaming.total_ms = 45000, streaming.ttft_ms = 3000 }
+  #timeouts = { non_streaming.total_ms = 45000, streaming.ttft_ms = 3000 }
 
 ###############################################################################
-# Profiles
+# Embedding Model: Qwen3-Embedding via Ollama
 ###############################################################################
 
-#[profiles.dev]
-#default = true
-#description = "Local development"
+[models.qwen3_embedding_8b]
+routing = ["local"]
+
+  [models.qwen3_embedding_8b.providers.local]
+  type = "openai"
+  api_base = "http://host.docker.internal:11434/v1"
+  model_name = "qwen3-embedding:8b"
+  api_key_location = "none"
+
+# ┌────────────────────────────────────────────────────────────────────────────┐
+# │                                 FUNCTIONS                                  │
+# └────────────────────────────────────────────────────────────────────────────┘
+
+[functions.simple_llm_call]
+type = "chat"
+
+[functions.simple_llm_call.variants.baseline]
+type = "chat_completion"
+model = "qwen3_8b"
+
+
+[functions.chatbot]
+type = "chat"
+
+[functions.chatbot.variants.openai]
+type = "chat_completion"
+model = "qwen3_embedding_8b"
+
+# ┌────────────────────────────────────────────────────────────────────────────┐
+# │                                  METRICS                                   │
+# └────────────────────────────────────────────────────────────────────────────┘
+
+[metrics.task_success]
+type = "boolean"
+optimize = "max"
+level = "episode"

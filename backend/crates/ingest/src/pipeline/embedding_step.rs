@@ -4,8 +4,10 @@ use mnemo_core::error::MnemoResult;
 use mnemo_core::rag::keyword::sparse_vector;
 use mnemo_core::ws::WS_HUB;
 use mnemo_inference::model_router::select_model;
+use mnemo_inference::TensorZeroEmbedder;
 use serde_json::json;
 use tokio::task;
+use std::sync::Arc;
 
 use super::{data::PipelineData, step::PipelineStep};
 
@@ -63,27 +65,44 @@ impl PipelineStep for EmbeddingStep {
             by_model.entry(model).or_default().push((idx, chunk.text.clone()));
         }
 
+        let embedder = Arc::new(
+            TensorZeroEmbedder::from_env()
+                .map_err(|e| mnemo_core::error::MnemoError::Message(e.to_string()))?,
+        );
+
         let mut embeddings: Vec<Vec<f32>> = vec![Vec::new(); data.chunks.len()];
 
         let mut tasks = Vec::new();
         for (_model, entries) in by_model {
             let indices: Vec<usize> = entries.iter().map(|(i, _)| *i).collect();
             let texts: Vec<String> = entries.into_iter().map(|(_, t)| t).collect();
+            let embedder = embedder.clone();
             tasks.push(task::spawn(async move {
-                // Temporary: fake embeddings until real TensorZero is wired.
-                let fake: Vec<Vec<f32>> = texts.iter().map(|_| vec![0.1_f32; 1536]).collect();
-                (indices, fake)
+                let mut vecs = Vec::new();
+                for t in texts {
+                    match embedder.embed(&t).await {
+                        Ok(v) => vecs.push(v),
+                        Err(e) => {
+                            return Err(e);
+                        }
+                    }
+                }
+                Ok::<(Vec<usize>, Vec<Vec<f32>>), mnemo_inference::InferenceError>((indices, vecs))
             }));
         }
 
         for res in join_all(tasks).await {
             match res {
-                Ok((indices, vecs)) => {
+                Ok(Ok((indices, vecs))) => {
                     for (i, emb) in indices.into_iter().zip(vecs.into_iter()) {
                         if i < embeddings.len() {
                             embeddings[i] = emb;
                         }
                     }
+                }
+                Ok(Err(e)) => {
+                    broadcast_step(&job_id, "embeddings", "failed");
+                    return Err(mnemo_core::error::MnemoError::Message(e.to_string()));
                 }
                 Err(e) => {
                     broadcast_step(&job_id, "embeddings", "failed");

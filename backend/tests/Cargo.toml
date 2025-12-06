@@ -44,3 +44,11 @@ path = "unit/inference_tests.rs"
 [[test]]
 name = "pipeline_builder_tests"
 path = "unit/pipeline_builder_tests.rs"
+
+[[test]]
+name = "llm_embedding_qwen3"
+path = "llm/embedding_qwen3.rs"
+
+[[test]]
+name = "llm_chat_qwen3"
+path = "llm/chat_qwen3.rs"

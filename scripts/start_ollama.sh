@@ -34,4 +34,10 @@ ollama pull qwen3:8b
 echo "[INFO] Warming model qwen3:8b…"
 echo "hello" | ollama run qwen3:8b >/dev/null 2>&1 || true
 
+echo "[INFO] Pulling model qwen3-embedding…"
+ollama pull qwen3-embedding:8b || true
+
+echo "[INFO] Warming model qwen3-embedding…"
+echo "ping" | ollama run qwen3-embedding >/dev/null 2>&1 || true
+
 echo "[INFO] Ollama ready."
