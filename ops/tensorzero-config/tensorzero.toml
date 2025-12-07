@@ -2,20 +2,21 @@
 # TensorZero Gateway Configuration (Dev Profile)
 ################################################################################
 
-#[server]
-#host = "0.0.0.0"
-#port = 3000
-#workers = 4
-#enable_cors = true
-#ui_auth_token = "dev-token"
-
-
 [gateway]
+observability.enabled = true
 disable_pseudonymous_usage_analytics = true
+bind_address = "0.0.0.0:3000"
+debug = true
+fetch_and_encode_input_files_before_inference = true
+# Note: async_writes and batch_writes cannot both be enabled; keep batch writes.
+observability.async_writes = false
+observability.batch_writes = { enabled = true, flush_interval_ms = 200, max_rows = 500 }
 
-#[security]
-#secret_key = "local-dev-secret"
-#signed_requests = false
+
+[postgres]
+enabled = true
+connection_pool_size = 20
+
 
 # ┌────────────────────────────────────────────────────────────────────────────┐
 # │                                   MODELS                                   │
