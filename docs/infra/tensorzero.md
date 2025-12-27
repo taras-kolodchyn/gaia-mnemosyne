@@ -1,32 +1,43 @@
-# TensorZero Core + UI (dev)
+# TensorZero Gateway + UI (dev)
 
 Flow:
 ```
-Mnemo API ──HTTP──> TensorZero (OpenAI compat :9090/v1) ──> Ollama (:11434) ──> Qwen2.5:7b
-                              │
-                              └── TensorZero UI (:4000)
+Mnemo API -> TensorZero Gateway (:3000, /inference) -> Ollama (:11434) -> chat_default, vector_default
+                         |
+                         -> TensorZero UI (:4000)
 ```
 
 Compose services (`make up`):
-- `ollama` on `11434`, volume `ollama_data`.
-- `tensorzero` (gateway image) on `9090`, with `MODEL_ADAPTER=ollama:qwen2.5:7b`, dev API key `local-dev-key`.
-- `tensorzero-ui` on `4000`, reads config from `tensorzero-config/`.
-- `mnemo-api` env points only to TensorZero (`MNEMO_LLM_URL=http://tensorzero:9090/v1`, `MNEMO_LLM_API_KEY=local-dev-key`).
+- `tensorzero` gateway on `3000`, config at `ops/tensorzero-config/tensorzero.toml`.
+- `tensorzero-ui` on `4000`.
+- `postgres` and `clickhouse` for TensorZero metadata/UI.
+- `ollama` runs on the host (macOS).
 
 Smoke tests:
 ```bash
-# From host
-curl -s http://localhost:9090/v1/models
+# Gateway health
+curl -s http://localhost:3000/status
 
-curl -s http://localhost:9090/v1/chat/completions \
-  -H 'Authorization: Bearer local-dev-key' \
+# Chat (via function)
+curl -X POST http://localhost:3000/inference \
   -H 'Content-Type: application/json' \
-  -d '{"model":"qwen2.5:7b","messages":[{"role":"user","content":"Hello from TensorZero"}]}'
+  -d '{"function_name":"chatbot","input":{"messages":[{"role":"user","content":"Hello from TensorZero"}]}}'
 
-# In compose network
-curl -s http://tensorzero:9090/v1/models
+# Embedding fallback (direct Ollama, temporary)
+curl -X POST http://localhost:11434/v1/embeddings \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"qwen3-embedding:8b","input":"hello world"}'
 ```
 
-Add models:
-1) Pull in Ollama: `ollama pull <model>`.
-2) Update `MODEL_ADAPTER` (tensorzero service) and `MNEMO_LLM_MODEL` if needed.
+Model aliases (avoid hardcoding model names in code):
+- `chat_default` -> `qwen3:8b`
+- `vector_default` -> `qwen3-embedding:8b`
+
+Adjust aliases in `ops/tensorzero-config/tensorzero.toml`, and set:
+- `MNEMO_LLM_MODEL=chat_default`
+- `TENSORZERO_EMBED_MODEL=vector_default`
+These aliases are required at runtime; the code does not fall back to a default.
+
+Vector (embedding) models are used to create numeric embeddings for semantic
+search, retrieval, and ranking. They are stored in Qdrant and reused by the
+RAG pipeline.

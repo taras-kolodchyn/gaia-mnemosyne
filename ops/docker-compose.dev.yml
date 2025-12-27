@@ -42,7 +42,10 @@ services:
       - MNEMO_LLM_PROVIDER=${MNEMO_LLM_PROVIDER:-tensorzero}
       - MNEMO_LLM_URL=${MNEMO_LLM_URL:-http://tensorzero:3000}
       - MNEMO_LLM_API_KEY=${MNEMO_LLM_API_KEY:-none}
-      - MNEMO_LLM_MODEL=${MNEMO_LLM_MODEL:-qwen3:8b}
+      - MNEMO_LLM_MODEL=${MNEMO_LLM_MODEL:-chat_default}
+      - TENSORZERO_EMBED_MODEL=${TENSORZERO_EMBED_MODEL:-vector_default}
+      - TENSORZERO_EMBED_FALLBACK_URL=${TENSORZERO_EMBED_FALLBACK_URL:-http://host.docker.internal:11434}
+      - TENSORZERO_EMBED_FALLBACK_MODELS=${TENSORZERO_EMBED_FALLBACK_MODELS:-qwen3-embedding:8b}
       - INGESTION_ROOT=/mnt/host_downloads
       # Default to info; raise to debug/trace locally by exporting RUST_LOG before compose.
       - RUST_LOG=${RUST_LOG:-info}

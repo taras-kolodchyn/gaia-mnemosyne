@@ -1,5 +1,6 @@
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use tracing::warn;
 
 use crate::error::InferenceError;
 
@@ -19,13 +20,18 @@ struct EmbeddingResponse {
     data: Vec<EmbeddingData>,
 }
 
-/// TensorZero embedder using `/inference` with an embedding model.
+/// Embedding client that targets OpenAI-compatible `/v1/embeddings` endpoints.
+/// TensorZero is used when it exposes embeddings; otherwise we can fall back
+/// to a direct Ollama-compatible endpoint.
 #[derive(Clone)]
 pub struct TensorZeroEmbedder {
     client: Client,
     url: String,
     models: Vec<String>, // priority-ordered list
     api_key: Option<String>,
+    fallback_url: Option<String>,
+    fallback_models: Vec<String>,
+    fallback_api_key: Option<String>,
 }
 
 impl TensorZeroEmbedder {
@@ -35,6 +41,9 @@ impl TensorZeroEmbedder {
             url,
             models,
             api_key: None,
+            fallback_url: None,
+            fallback_models: Vec::new(),
+            fallback_api_key: None,
         }
     }
 
@@ -57,33 +66,111 @@ impl TensorZeroEmbedder {
             })
             .collect();
         if models.is_empty() {
-            models.push(
-                std::env::var("TENSORZERO_EMBED_MODEL")
-                    .unwrap_or_else(|_| "qwen3_embedding".into()),
-            );
+            if let Ok(single) = std::env::var("TENSORZERO_EMBED_MODEL")
+                .or_else(|_| std::env::var("MNEMO_EMBED_MODEL"))
+            {
+                let trimmed = single.trim();
+                if !trimmed.is_empty() {
+                    models.push(trimmed.to_string());
+                }
+            }
+        }
+        if models.is_empty() {
+            return Err(InferenceError::Other(
+                "embedding model alias is not configured (set TENSORZERO_EMBED_MODEL or TENSORZERO_EMBED_MODELS)"
+                    .into(),
+            ));
         }
         let api_key = std::env::var("TENSORZERO_API_KEY")
             .or_else(|_| std::env::var("MNEMO_LLM_API_KEY"))
             .ok()
             .filter(|k| !k.is_empty() && k.to_lowercase() != "none");
 
+        let fallback_url = std::env::var("TENSORZERO_EMBED_FALLBACK_URL")
+            .or_else(|_| std::env::var("MNEMO_EMBED_FALLBACK_URL"))
+            .ok()
+            .filter(|u| !u.trim().is_empty());
+        let fallback_models_env = std::env::var("TENSORZERO_EMBED_FALLBACK_MODELS")
+            .or_else(|_| std::env::var("MNEMO_EMBED_FALLBACK_MODELS"))
+            .unwrap_or_else(|_| "".into());
+        let fallback_models: Vec<String> = fallback_models_env
+            .split(',')
+            .filter_map(|s| {
+                let trimmed = s.trim();
+                if trimmed.is_empty() {
+                    None
+                } else {
+                    Some(trimmed.to_string())
+                }
+            })
+            .collect();
+        let fallback_api_key = std::env::var("TENSORZERO_EMBED_FALLBACK_API_KEY")
+            .or_else(|_| std::env::var("MNEMO_EMBED_FALLBACK_API_KEY"))
+            .ok()
+            .filter(|k| !k.is_empty() && k.to_lowercase() != "none");
+
         let mut embedder = Self::new(url, models);
         embedder.api_key = api_key;
+        embedder.fallback_url = fallback_url;
+        embedder.fallback_models = fallback_models;
+        embedder.fallback_api_key = fallback_api_key;
         Ok(embedder)
     }
 
     pub async fn embed(&self, text: &str) -> Result<Vec<f32>, InferenceError> {
-        let url = format!("{}/v1/embeddings", self.url.trim_end_matches('/'));
         let mut last_err: Option<InferenceError> = None;
 
-        for model in &self.models {
+        if let Some(vec) = self
+            .embed_with(
+                &self.url,
+                &self.models,
+                self.api_key.as_ref(),
+                text,
+                &mut last_err,
+            )
+            .await
+        {
+            return Ok(vec);
+        }
+
+        if let Some(fallback_url) = &self.fallback_url {
+            if self.fallback_models.is_empty() {
+                warn!("TensorZero embed fallback URL set but no fallback models configured");
+            } else if let Some(vec) = self
+                .embed_with(
+                    fallback_url,
+                    &self.fallback_models,
+                    self.fallback_api_key.as_ref(),
+                    text,
+                    &mut last_err,
+                )
+                .await
+            {
+                return Ok(vec);
+            }
+        }
+
+        Err(last_err.unwrap_or_else(|| InferenceError::Other("no models tried".into())))
+    }
+
+    async fn embed_with(
+        &self,
+        base_url: &str,
+        models: &[String],
+        api_key: Option<&String>,
+        text: &str,
+        last_err: &mut Option<InferenceError>,
+    ) -> Option<Vec<f32>> {
+        let url = embeddings_url(base_url);
+
+        for model in models {
             let body = EmbeddingRequest {
                 model: model.clone(),
                 input: text.to_string(),
             };
 
             let mut req = self.client.post(&url).json(&body);
-            if let Some(key) = &self.api_key {
+            if let Some(key) = api_key {
                 req = req.bearer_auth(key);
             }
 
@@ -91,16 +178,17 @@ impl TensorZeroEmbedder {
             let resp = match resp {
                 Ok(r) => r,
                 Err(e) => {
-                    last_err = Some(e.into());
+                    *last_err = Some(e.into());
                     continue;
                 }
             };
 
-            if !resp.status().is_success() {
-                last_err = Some(InferenceError::Status(format!(
-                    "TensorZero embed error: model={} status={}",
-                    model,
-                    resp.status()
+            let status = resp.status();
+            if !status.is_success() {
+                let body = resp.text().await.unwrap_or_default();
+                *last_err = Some(InferenceError::Status(format!(
+                    "embed error: model={} status={} body={}",
+                    model, status, body
                 )));
                 continue;
             }
@@ -109,19 +197,30 @@ impl TensorZeroEmbedder {
             match parsed {
                 Ok(parsed) => {
                     if let Some(first) = parsed.data.first() {
-                        return Ok(first.embedding.clone());
+                        return Some(first.embedding.clone());
                     }
-                    last_err = Some(InferenceError::Other(
+                    *last_err = Some(InferenceError::Other(
                         "embedding response had empty data".into(),
                     ));
                 }
                 Err(e) => {
-                    last_err = Some(e.into());
+                    *last_err = Some(e.into());
                     continue;
                 }
             }
         }
 
-        Err(last_err.unwrap_or_else(|| InferenceError::Other("no models tried".into())))
+        None
+    }
+}
+
+fn embeddings_url(base: &str) -> String {
+    let trimmed = base.trim_end_matches('/');
+    if trimmed.ends_with("/v1/embeddings") {
+        trimmed.to_string()
+    } else if trimmed.ends_with("/v1") {
+        format!("{}/embeddings", trimmed)
+    } else {
+        format!("{}/v1/embeddings", trimmed)
     }
 }

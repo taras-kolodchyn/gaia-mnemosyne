@@ -4,8 +4,6 @@ use std::sync::OnceLock;
 
 use serde::Deserialize;
 
-const DEFAULT_MODEL: &str = "tensorzero-small";
-
 #[derive(Deserialize, Default)]
 struct ModelEntry {
     model: Option<String>,
@@ -21,6 +19,33 @@ struct RouterConfig {
     markdown: Option<ModelEntry>,
     #[serde(default)]
     openapi: Option<ModelEntry>,
+}
+
+fn default_model_alias() -> Option<String> {
+    let from_single = std::env::var("TENSORZERO_EMBED_MODEL")
+        .or_else(|_| std::env::var("MNEMO_EMBED_MODEL"))
+        .ok()
+        .and_then(|v| {
+            let trimmed = v.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        });
+    if from_single.is_some() {
+        return from_single;
+    }
+
+    std::env::var("TENSORZERO_EMBED_MODELS")
+        .or_else(|_| std::env::var("MNEMO_EMBED_MODELS"))
+        .ok()
+        .and_then(|list| {
+            list.split(',')
+                .map(|s| s.trim())
+                .find(|s| !s.is_empty())
+                .map(|s| s.to_string())
+        })
 }
 
 fn load_config_map() -> &'static HashMap<String, String> {
@@ -47,13 +72,16 @@ fn load_config_map() -> &'static HashMap<String, String> {
             }
         }
 
-        // fallback defaults
-        HashMap::from([
-            ("default".into(), DEFAULT_MODEL.into()),
-            ("rust".into(), "tensorzero-code".into()),
-            ("markdown".into(), "tensorzero-document".into()),
-            ("openapi".into(), "tensorzero-api".into()),
-        ])
+        if let Some(default) = default_model_alias() {
+            return HashMap::from([
+                ("default".into(), default.clone()),
+                ("rust".into(), default.clone()),
+                ("markdown".into(), default.clone()),
+                ("openapi".into(), default),
+            ]);
+        }
+
+        HashMap::new()
     })
 }
 
@@ -65,7 +93,11 @@ pub fn select_model(
     doc_size: Option<i64>,
 ) -> String {
     let map = load_config_map();
-    let default = map.get("default").cloned().unwrap_or_else(|| DEFAULT_MODEL.to_string());
+    let default = map
+        .get("default")
+        .cloned()
+        .or_else(default_model_alias)
+        .unwrap_or_default();
 
     // Large documents -> document-focused model if configured.
     if let Some(size) = doc_size {

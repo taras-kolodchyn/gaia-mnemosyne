@@ -1,52 +1,56 @@
-# TensorZero LLM Proxy (local dev, macOS M1)
+# TensorZero Gateway (local dev)
 
-Mnemosyne should call TensorZero, not Ollama directly. TensorZero proxies the local Ollama-backed model (Qwen2.5 7B) and exposes a stable HTTP API.
+Mnemosyne should call TensorZero, not Ollama directly. TensorZero proxies the local Ollama-backed models and exposes a stable HTTP API.
 
 ## Prereqs
 - Ollama installed and running (`http://localhost:11434`)
-- Qwen2.5 7B pulled:
+- Models pulled:
   ```bash
-  ollama pull qwen2.5:7b
+  ollama pull qwen3:8b
+  ollama pull qwen3-embedding:8b
   ```
 - TensorZero installed (choose one):
   ```bash
-  # pip/uv
   pip install tensorzero
-  # or uv
+  # or
   uv pip install tensorzero
-  # or check releases for binaries: https://github.com/tensorzero/tensorzero
+  # or check releases: https://github.com/tensorzero/tensorzero
   ```
 
 ## Start TensorZero (local)
-Use the helper script (after making it executable once: `chmod +x scripts/run-tensorzero-local.sh`):
+Helper script (make executable once: `chmod +x scripts/run-tensorzero-local.sh`):
 ```bash
 scripts/run-tensorzero-local.sh
 ```
-It checks Ollama availability then runs:
+It runs:
 ```
-tensorzero serve --config infra/tensorzero/tensorzero.yaml
+tensorzero serve --config ops/tensorzero-config/tensorzero.toml
 ```
-Default endpoint: `http://localhost:9090`
+Default endpoint: `http://localhost:3000`
 
-Manual run (optional):
+Manual run:
 ```bash
-tensorzero serve --config infra/tensorzero/tensorzero.yaml
+tensorzero serve --config ops/tensorzero-config/tensorzero.toml
 ```
 
 ### Health check
 ```bash
-scripts/check-tensorzero.sh          # uses MNEMO_LLM_URL or defaults to http://localhost:9090
-curl -s http://localhost:9090/v1/models
+scripts/check-tensorzero.sh          # uses MNEMO_LLM_URL or defaults to http://localhost:3000
+curl -s http://localhost:3000/status
 ```
 
 ## Env vars for Mnemosyne
-Set before running the stack (docker-compose passes these through):
 ```bash
 export MNEMO_LLM_PROVIDER=tensorzero
-export MNEMO_LLM_URL=http://host.docker.internal:9090   # for Docker on macOS
-export MNEMO_LLM_MODEL=qwen2.5:7b
+export MNEMO_LLM_URL=http://host.docker.internal:3000
+export MNEMO_LLM_MODEL=chat_default
+export TENSORZERO_EMBED_MODEL=vector_default
+export TENSORZERO_EMBED_FALLBACK_URL=http://host.docker.internal:11434
+export TENSORZERO_EMBED_FALLBACK_MODELS=qwen3-embedding:8b
 ```
+These aliases are required by the code; there is no hardcoded fallback.
 
 ## Notes
-- TensorZero → Ollama → Qwen2.5 7B. Mnemo API must never call Ollama directly.
-- Ensure Ollama is running on the host; TensorZero proxies it for container access.
+- TensorZero -> Ollama -> Qwen3 via model aliases (`chat_default`, `vector_default`).
+- Mnemo API should not call Ollama directly except for embedding fallback (temporary).
+- Keep concrete model names in config/`.env` only; code should use aliases.

@@ -10,6 +10,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install Rust 1.91.1
-        run: rustup toolchain install 1.91.1 && rustup default 1.91.1
-      - name: Placeholder
-        run: echo "Gaia Mnemosyne CI pipeline placeholder"
+        uses: dtolnay/rust-toolchain@1.91.1
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: backend -> target
+      - name: Build mnemo-api-service
+        working-directory: backend
+        run: cargo build -p mnemo-api-service
+      - name: Run mnemo-tests
+        working-directory: backend
+        run: cargo test -p mnemo-tests

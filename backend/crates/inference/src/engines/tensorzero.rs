@@ -34,7 +34,10 @@ impl TensorZeroConfig {
             .unwrap_or_else(|_| "http://tensorzero:3000".to_string());
         let model_name = std::env::var("MNEMO_LLM_MODEL")
             .or_else(|_| std::env::var("TENSORZERO_MODEL"))
-            .unwrap_or_else(|_| "qwen3_8b".to_string());
+            .map_err(|_| TensorZeroError::Config("MNEMO_LLM_MODEL is not set".into()))?;
+        if model_name.trim().is_empty() {
+            return Err(TensorZeroError::Config("MNEMO_LLM_MODEL is empty".into()));
+        }
         let api_key =
             std::env::var("MNEMO_LLM_API_KEY").unwrap_or_else(|_| "none".to_string());
         let timeout_ms = std::env::var("TENSORZERO_TIMEOUT_MS")

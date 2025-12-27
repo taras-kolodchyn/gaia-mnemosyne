@@ -26,6 +26,7 @@ pub struct GraphNodeDetail {
 struct NodeQueryRow {
     id: Thing,
     path: String,
+    #[allow(dead_code)]
     namespace: String,
     kind: String,
     chunk_index: Option<i64>,

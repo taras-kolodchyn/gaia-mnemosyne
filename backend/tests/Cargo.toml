@@ -46,9 +46,9 @@ name = "pipeline_builder_tests"
 path = "unit/pipeline_builder_tests.rs"
 
 [[test]]
-name = "llm_embedding_qwen3"
-path = "llm/embedding_qwen3.rs"
+name = "llm_embedding_configured"
+path = "llm/embedding_configured.rs"
 
 [[test]]
-name = "llm_chat_qwen3"
-path = "llm/chat_qwen3.rs"
+name = "llm_chat_configured"
+path = "llm/chat_configured.rs"

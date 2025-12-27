@@ -2,9 +2,9 @@
 
 set -euo pipefail
 
-CONFIG_PATH="${CONFIG_PATH:-infra/tensorzero/tensorzero.yaml}"
+CONFIG_PATH="${CONFIG_PATH:-ops/tensorzero-config/tensorzero.toml}"
 OLLAMA_URL="${OLLAMA_URL:-http://localhost:11434}"
-TENSORZERO_PORT="${TENSORZERO_PORT:-9090}"
+TENSORZERO_PORT="${TENSORZERO_PORT:-3000}"
 
 echo "Checking Ollama at ${OLLAMA_URL}..."
 if curl -sS --max-time 3 "${OLLAMA_URL}/api/tags" >/dev/null; then

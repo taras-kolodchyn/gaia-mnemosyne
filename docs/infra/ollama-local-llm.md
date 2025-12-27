@@ -1,57 +1,60 @@
-# Ollama Qwen2.5 Local LLM (macOS M1)
+# Ollama Qwen3 Local LLM (macOS)
 
-This guide prepares a local Ollama endpoint on a Mac M1 for Gaia Mnemosyne. No Mnemo code changes are required beyond setting environment variables and ensuring Docker containers can reach the host.
+This guide prepares a local Ollama endpoint on macOS for Gaia Mnemosyne. TensorZero uses Ollama as the backend, and embeddings temporarily fall back to Ollama directly.
 
 ## 1) Install Ollama (macOS)
-- Download and install from https://ollama.com/download (official .dmg).  
-  *Do not use Homebrew for this setup.*
-- Start Ollama (launch the app). It runs a local HTTP service on `http://localhost:11434`.
+- Download and install from https://ollama.com/download (official .dmg).
+- Start Ollama (launch the app). It runs on `http://localhost:11434`.
 - Verify it is running:
   ```bash
   ps aux | grep ollama
   curl -s http://localhost:11434/api/version
   ```
 
-## 2) Pull Qwen2.5 7B
+## 2) Pull models
 ```bash
-ollama pull qwen2.5:7b
+ollama pull qwen3:8b
+ollama pull qwen3-embedding:8b
 ```
 - Check models:
   ```bash
   ollama list
   ```
-- Smoke test:
+- Chat smoke test:
   ```bash
-  ollama run qwen2.5:7b <<'EOF'
+  ollama run qwen3:8b <<'EOF'
   You are a concise assistant. Say hello in one sentence.
   EOF
   ```
-- API tag listing:
+- Embedding smoke test:
   ```bash
-  curl -s http://localhost:11434/api/tags
+  curl -X POST http://localhost:11434/v1/embeddings \
+    -H 'Content-Type: application/json' \
+    -d '{"model":"qwen3-embedding:8b","input":"hello world"}'
   ```
 
-## 3) Resource notes (M1)
-- Qwen2.5:7B typically needs ~6–8 GB RAM; allow headroom for Docker containers.
+## 3) Resource notes
+- Qwen3 8B typically needs ~6-8 GB RAM; allow headroom for Docker containers.
 - CPU-only is fine; GPU use depends on your hardware/drivers.
 
 ## 4) Networking from Mnemo containers
 - On macOS, Docker containers can reach the host via `http://host.docker.internal`.
 - For Ollama, use: `http://host.docker.internal:11434`.
 
-## 5) Mnemo environment variables (LLM)
-Set these before running the stack (also injected via docker-compose):
+## 5) Mnemo env vars (embedding fallback)
+TensorZero handles chat, while embeddings fall back to Ollama for now:
 ```bash
-export MNEMO_LLM_BASE_URL=http://host.docker.internal:11434
-export MNEMO_LLM_MODEL=qwen2.5:7b
+export TENSORZERO_EMBED_FALLBACK_URL=http://host.docker.internal:11434
+export TENSORZERO_EMBED_FALLBACK_MODELS=qwen3-embedding:8b
 ```
+Set `TENSORZERO_EMBED_MODEL` (alias) in your env or compose config; concrete
+model names live only in config/env.
 
 ## 6) Health check helper
-After setting the env vars:
 ```bash
 scripts/check-ollama-llm.sh
 ```
-It will report whether the Ollama endpoint is reachable. If you just cloned, mark executable once:
+If you just cloned, mark executable once:
 ```bash
 chmod +x scripts/check-ollama-llm.sh
 ```

@@ -24,13 +24,13 @@ connection_pool_size = 20
 
 
 ###############################################################################
-# Model: Qwen3-8B via Ollama (OpenAI-compatible proxy)
+# Model: default chat model via Ollama (OpenAI-compatible proxy)
 ###############################################################################
 
-[models.qwen3_8b]
+[models.chat_default]
 routing = ["local"]
 
-  [models.qwen3_8b.providers.local]
+  [models.chat_default.providers.local]
   type = "openai"
   api_base = "http://host.docker.internal:11434/v1"
   model_name = "qwen3:8b"
@@ -38,13 +38,13 @@ routing = ["local"]
   #timeouts = { non_streaming.total_ms = 45000, streaming.ttft_ms = 3000 }
 
 ###############################################################################
-# Embedding Model: Qwen3-Embedding via Ollama
+# Embedding Model: default vector model via Ollama
 ###############################################################################
 
-[models.qwen3_embedding_8b]
+[models.vector_default]
 routing = ["local"]
 
-  [models.qwen3_embedding_8b.providers.local]
+  [models.vector_default.providers.local]
   type = "openai"
   api_base = "http://host.docker.internal:11434/v1"
   model_name = "qwen3-embedding:8b"
@@ -59,7 +59,7 @@ type = "chat"
 
 [functions.simple_llm_call.variants.baseline]
 type = "chat_completion"
-model = "qwen3_8b"
+model = "chat_default"
 
 
 [functions.chatbot]
@@ -67,7 +67,7 @@ type = "chat"
 
 [functions.chatbot.variants.openai]
 type = "chat_completion"
-model = "qwen3_embedding_8b"
+model = "chat_default"
 
 # ┌────────────────────────────────────────────────────────────────────────────┐
 # │                                  METRICS                                   │
